@@ -32,9 +32,9 @@ internal static class DmxWriter
 		model["upAxis"] = "Z";
 		model["axisSystem"] = CreateAxisSystem( dmx );
 
-		if ( meshDag.MorphNames.Count > 0 )
+		if ( meshDag.Morphs.Count > 0 )
 		{
-			root["combinationOperator"] = CreateCombinationOperator( dmx, meshDag.Mesh, meshDag.MorphNames );
+			root["combinationOperator"] = CreateCombinationOperator( dmx, meshDag.Mesh, meshDag.Morphs );
 		}
 
 		dmx.Root = root;
@@ -211,7 +211,7 @@ internal static class DmxWriter
 		dmeMesh["baseStates"] = baseStates;
 		dmeMesh["faceSets"] = faceSets;
 
-		List<string> writtenMorphs = AddMorphDeltaStates( dmx, dmeMesh, mesh.Morphs, sourceVertexToCorners );
+		List<MeshMorphExport> writtenMorphs = AddMorphDeltaStates( dmx, dmeMesh, mesh.Morphs, sourceVertexToCorners );
 
 		DMElement dag = CreateElement( dmx, mesh.Name, "DmeDag" );
 		dag["transform"] = CreateTransform( dmx, mesh.Name, NVector3.Zero, NQuaternion.Identity );
@@ -222,17 +222,17 @@ internal static class DmxWriter
 		{
 			Dag = dag,
 			Mesh = dmeMesh,
-			MorphNames = writtenMorphs
+			Morphs = writtenMorphs
 		};
 	}
 
-	private static List<string> AddMorphDeltaStates(
+	private static List<MeshMorphExport> AddMorphDeltaStates(
 		Datamodel.Datamodel dmx,
 		DMElement dmeMesh,
 		List<MeshMorphExport> morphs,
 		Dictionary<int, List<int>> sourceVertexToCorners )
 	{
-		var writtenMorphs = new List<string>( morphs.Count );
+		var writtenMorphs = new List<MeshMorphExport>( morphs.Count );
 		var deltaStates = new ElementArray();
 
 		foreach ( MeshMorphExport morph in morphs.OrderBy( m => m.Name, StringComparer.OrdinalIgnoreCase ) )
@@ -320,7 +320,7 @@ internal static class DmxWriter
 			}
 
 			deltaStates.Add( deltaState );
-			writtenMorphs.Add( morph.Name );
+			writtenMorphs.Add( morph );
 		}
 
 		if ( writtenMorphs.Count > 0 )
@@ -342,17 +342,18 @@ internal static class DmxWriter
 		return writtenMorphs;
 	}
 
-	private static DMElement CreateCombinationOperator( Datamodel.Datamodel dmx, DMElement targetMesh, IReadOnlyList<string> morphNames )
+	private static DMElement CreateCombinationOperator( Datamodel.Datamodel dmx, DMElement targetMesh, IReadOnlyList<MeshMorphExport> morphs )
 	{
 		DMElement combo = CreateElement( dmx, "combinationOperator", "DmeCombinationOperator" );
 		var controls = new ElementArray();
 		var controlValues = new Vector3Array();
 		var controlValuesLagged = new Vector3Array();
 
-		foreach ( string morphName in morphNames.OrderBy( n => n, StringComparer.OrdinalIgnoreCase ) )
+		foreach ( MeshMorphExport morph in morphs.OrderBy( n => n.Name, StringComparer.OrdinalIgnoreCase ) )
 		{
-			DMElement control = CreateElement( dmx, morphName, "DmeCombinationInputControl" );
-			control["rawControlNames"] = new StringArray { morphName };
+			string controlName = string.IsNullOrWhiteSpace( morph.DisplayName ) ? morph.Name : morph.DisplayName;
+			DMElement control = CreateElement( dmx, controlName, "DmeCombinationInputControl" );
+			control["rawControlNames"] = new StringArray { morph.Name };
 			control["stereo"] = false;
 			control["eyelid"] = false;
 			control["wrinkleScales"] = new FloatArray { 0f };
@@ -455,6 +456,6 @@ internal static class DmxWriter
 	{
 		public required DMElement Dag { get; init; }
 		public required DMElement Mesh { get; init; }
-		public required List<string> MorphNames { get; init; }
+		public required List<MeshMorphExport> Morphs { get; init; }
 	}
 }

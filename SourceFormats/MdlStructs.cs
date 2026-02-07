@@ -270,6 +270,55 @@ public struct StudioFlexDesc
 }
 
 /// <summary>
+/// Flex controller entry (mstudioflexcontroller_t).
+/// </summary>
+[StructLayout( LayoutKind.Sequential, Pack = 1 )]
+public struct StudioFlexController
+{
+	public int TypeOffset;
+	public int NameOffset;
+	public int LocalToGlobal;
+	public float Min;
+	public float Max;
+}
+
+/// <summary>
+/// Flex rule entry (mstudioflexrule_t).
+/// </summary>
+[StructLayout( LayoutKind.Sequential, Pack = 1 )]
+public struct StudioFlexRule
+{
+	public int FlexIndex;
+	public int OpCount;
+	public int OpOffset;
+}
+
+/// <summary>
+/// Flex op entry (mstudioflexop_t).
+/// </summary>
+[StructLayout( LayoutKind.Sequential, Pack = 1 )]
+public struct StudioFlexOp
+{
+	public int Op;
+	public int Value;
+}
+
+/// <summary>
+/// Flex controller UI entry (mstudioflexcontrollerui_t).
+/// </summary>
+[StructLayout( LayoutKind.Sequential, Pack = 1 )]
+public struct StudioFlexControllerUI
+{
+	public int NameOffset;
+	public int Index0;
+	public int Index1;
+	public int Index2;
+	public byte RemapType;
+	public byte Stereo;
+	public ushort Unused;
+}
+
+/// <summary>
 /// Flex entry on a mesh (mstudioflex_t) for MDL v44+.
 /// </summary>
 [StructLayout( LayoutKind.Sequential, Pack = 1 )]

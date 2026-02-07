@@ -1,6 +1,6 @@
 # MDL to VMDL Converter
 
-Direct Source 1 (`.mdl`) to s&box ModelDoc (`.vmdl`) converter. Make sure to extract addons etc to GarrysMod/GarrysMod/ - move the materials folder and models folder in here and then select the model in that dir for conversion.
+Direct Source 1 (`.mdl`) to s&box ModelDoc (`.vmdl`) converter.
 
 No FBX/OBJ step.
 
@@ -51,7 +51,7 @@ Output:
 Run without arguments to open the GUI.
 
 Single model:
-1. Pick your `.mdl`. Make sure to extract addons etc to GarrysMod/GarrysMod/ - move the materials folder and models folder in here and then select the model in that dir for conversion.
+1. Pick your `.mdl`.
 2. Pick GMod root (`...\GarrysMod\garrysmod`) or let auto-detect fill it.
 3. Pick output root.
 4. Keep `Preserve models/... output path` enabled.

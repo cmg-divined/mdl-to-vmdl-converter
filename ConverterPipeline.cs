@@ -257,13 +257,24 @@ internal static class ConverterPipeline
 			}
 		}
 
-		List<MeshMorphExport> morphs = BuildModelMorphs( mdlModel, bodyPartVertexIndexStart );
+		List<MeshMorphExport> morphs = BuildModelMorphs( mdl, mdlModel, bodyPartVertexIndexStart, vertices );
 		return (triangles, morphs);
 	}
 
-	private static List<MeshMorphExport> BuildModelMorphs( MdlModel mdlModel, int bodyPartVertexIndexStart )
+	private static List<MeshMorphExport> BuildModelMorphs( MdlFile mdl, MdlModel mdlModel, int bodyPartVertexIndexStart, VvdVertex[] vertices )
 	{
 		var perMorph = new Dictionary<string, Dictionary<int, MeshMorphDeltaExport>>( StringComparer.OrdinalIgnoreCase );
+		var modelMorphNames = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+
+		foreach ( MdlMesh mdlMesh in mdlModel.Meshes )
+		{
+			foreach ( MdlFlex flex in mdlMesh.Flexes )
+			{
+				string displayName = mdl.ResolveFlexDisplayName( flex.FlexDescIndex, flex.Name );
+				string morphName = NameUtil.CleanName( displayName, $"flex_{flex.FlexDescIndex}" );
+				modelMorphNames.Add( morphName );
+			}
+		}
 
 		foreach ( MdlMesh mdlMesh in mdlModel.Meshes )
 		{
@@ -279,34 +290,35 @@ internal static class ConverterPipeline
 					continue;
 				}
 
-				string morphName = NameUtil.CleanName( flex.Name, $"flex_{flex.FlexDescIndex}" );
-				if ( !perMorph.TryGetValue( morphName, out Dictionary<int, MeshMorphDeltaExport>? deltaMap ) )
-				{
-					deltaMap = new Dictionary<int, MeshMorphDeltaExport>();
-					perMorph[morphName] = deltaMap;
-				}
+				string displayName = mdl.ResolveFlexDisplayName( flex.FlexDescIndex, flex.Name );
+				string baseMorphName = NameUtil.CleanName( displayName, $"flex_{flex.FlexDescIndex}" );
+				FlexSideHint sideHint = GetFlexSideHint( baseMorphName );
+				string stereoCounterpartName = GetStereoCounterpartName( baseMorphName, sideHint );
+				bool hasExplicitCounterpart = sideHint != FlexSideHint.Unknown &&
+					!string.Equals( stereoCounterpartName, baseMorphName, StringComparison.OrdinalIgnoreCase ) &&
+					modelMorphNames.Contains( stereoCounterpartName );
+				bool hasBlendedSideData = flex.VertexAnimations.Any( v => v.Side > 0 && v.Side < byte.MaxValue );
+				bool splitStereo = (flex.PartnerIndex > 0 || hasBlendedSideData) && !hasExplicitCounterpart;
+				(string leftMorphName, string rightMorphName) = GetStereoMorphNames( baseMorphName, sideHint );
 
 				foreach ( MdlFlexVertexAnimation vertAnim in flex.VertexAnimations )
 				{
 					int sourceVertexIndex = bodyPartVertexIndexStart + mdlMesh.VertexOffset + vertAnim.VertexIndex;
-					if ( deltaMap.TryGetValue( sourceVertexIndex, out MeshMorphDeltaExport existing ) )
+					if ( sourceVertexIndex < 0 || sourceVertexIndex >= vertices.Length )
 					{
-						deltaMap[sourceVertexIndex] = new MeshMorphDeltaExport
-						{
-							SourceVertexIndex = sourceVertexIndex,
-							PositionDelta = existing.PositionDelta + vertAnim.VertexDelta,
-							NormalDelta = existing.NormalDelta + vertAnim.NormalDelta
-						};
+						continue;
 					}
-					else
+
+					if ( splitStereo )
 					{
-						deltaMap[sourceVertexIndex] = new MeshMorphDeltaExport
-						{
-							SourceVertexIndex = sourceVertexIndex,
-							PositionDelta = vertAnim.VertexDelta,
-							NormalDelta = vertAnim.NormalDelta
-						};
+						float rightWeight = Math.Clamp( vertAnim.Side / 255f, 0f, 1f );
+						float leftWeight = 1f - rightWeight;
+						AddMorphDelta( perMorph, leftMorphName, sourceVertexIndex, vertAnim.VertexDelta, vertAnim.NormalDelta, leftWeight );
+						AddMorphDelta( perMorph, rightMorphName, sourceVertexIndex, vertAnim.VertexDelta, vertAnim.NormalDelta, rightWeight );
+						continue;
 					}
+
+					AddMorphDelta( perMorph, baseMorphName, sourceVertexIndex, vertAnim.VertexDelta, vertAnim.NormalDelta, 1f );
 				}
 			}
 		}
@@ -326,11 +338,160 @@ internal static class ConverterPipeline
 			result.Add( new MeshMorphExport
 			{
 				Name = pair.Key,
+				DisplayName = FormatMorphDisplayName( pair.Key ),
 				Deltas = deltas
 			} );
 		}
 
 		return result;
+	}
+
+	private enum FlexSideHint
+	{
+		Unknown,
+		Left,
+		Right
+	}
+
+	private static void AddMorphDelta(
+		Dictionary<string, Dictionary<int, MeshMorphDeltaExport>> perMorph,
+		string morphName,
+		int sourceVertexIndex,
+		Vector3 positionDelta,
+		Vector3 normalDelta,
+		float scale )
+	{
+		if ( scale <= 1e-6f )
+		{
+			return;
+		}
+
+		if ( !perMorph.TryGetValue( morphName, out Dictionary<int, MeshMorphDeltaExport>? deltaMap ) )
+		{
+			deltaMap = new Dictionary<int, MeshMorphDeltaExport>();
+			perMorph[morphName] = deltaMap;
+		}
+
+		Vector3 scaledPos = positionDelta * scale;
+		Vector3 scaledNrm = normalDelta * scale;
+		if ( deltaMap.TryGetValue( sourceVertexIndex, out MeshMorphDeltaExport existing ) )
+		{
+			deltaMap[sourceVertexIndex] = new MeshMorphDeltaExport
+			{
+				SourceVertexIndex = sourceVertexIndex,
+				PositionDelta = existing.PositionDelta + scaledPos,
+				NormalDelta = existing.NormalDelta + scaledNrm
+			};
+		}
+		else
+		{
+			deltaMap[sourceVertexIndex] = new MeshMorphDeltaExport
+			{
+				SourceVertexIndex = sourceVertexIndex,
+				PositionDelta = scaledPos,
+				NormalDelta = scaledNrm
+			};
+		}
+	}
+
+	private static (string Left, string Right) GetStereoMorphNames( string baseName, FlexSideHint sideHint )
+	{
+		return sideHint switch
+		{
+			FlexSideHint.Left => (baseName, GetStereoCounterpartName( baseName, FlexSideHint.Left )),
+			FlexSideHint.Right => (GetStereoCounterpartName( baseName, FlexSideHint.Right ), baseName),
+			_ => ($"{baseName}_left", $"{baseName}_right")
+		};
+	}
+
+	private static string GetStereoCounterpartName( string name, FlexSideHint sideHint )
+	{
+		if ( string.IsNullOrWhiteSpace( name ) || sideHint == FlexSideHint.Unknown )
+		{
+			return name;
+		}
+
+		string fromWord = sideHint == FlexSideHint.Left ? "left" : "right";
+		string toWord = sideHint == FlexSideHint.Left ? "right" : "left";
+		int wordIndex = name.LastIndexOf( fromWord, StringComparison.OrdinalIgnoreCase );
+		if ( wordIndex >= 0 )
+		{
+			return string.Concat( name.AsSpan( 0, wordIndex ), toWord, name.AsSpan( wordIndex + fromWord.Length ) );
+		}
+
+		if ( name.EndsWith( "_l", StringComparison.OrdinalIgnoreCase ) )
+		{
+			return string.Concat( name.AsSpan( 0, name.Length - 2 ), "_r" );
+		}
+
+		if ( name.EndsWith( "_r", StringComparison.OrdinalIgnoreCase ) )
+		{
+			return string.Concat( name.AsSpan( 0, name.Length - 2 ), "_l" );
+		}
+
+		char fromSuffix = sideHint == FlexSideHint.Left ? 'l' : 'r';
+		char toSuffix = sideHint == FlexSideHint.Left ? 'r' : 'l';
+		if ( name.Length > 1 && char.ToLowerInvariant( name[^1] ) == fromSuffix && char.IsLetterOrDigit( name[^2] ) )
+		{
+			return $"{name[..^1]}{toSuffix}";
+		}
+
+		return sideHint == FlexSideHint.Left ? $"{name}_right" : $"{name}_left";
+	}
+
+	private static FlexSideHint GetFlexSideHint( string? name )
+	{
+		if ( string.IsNullOrWhiteSpace( name ) )
+		{
+			return FlexSideHint.Unknown;
+		}
+
+		string value = name.Trim().ToLowerInvariant();
+		if ( value.Contains( "left", StringComparison.Ordinal ) || value.EndsWith( "_l", StringComparison.Ordinal ) )
+		{
+			return FlexSideHint.Left;
+		}
+
+		if ( value.Contains( "right", StringComparison.Ordinal ) || value.EndsWith( "_r", StringComparison.Ordinal ) )
+		{
+			return FlexSideHint.Right;
+		}
+
+		if ( value.EndsWith( "l", StringComparison.Ordinal ) && value.Length > 1 )
+		{
+			char prev = value[value.Length - 2];
+			if ( char.IsLetterOrDigit( prev ) )
+			{
+				return FlexSideHint.Left;
+			}
+		}
+
+		if ( value.EndsWith( "r", StringComparison.Ordinal ) && value.Length > 1 )
+		{
+			char prev = value[value.Length - 2];
+			if ( char.IsLetterOrDigit( prev ) )
+			{
+				return FlexSideHint.Right;
+			}
+		}
+
+		return FlexSideHint.Unknown;
+	}
+
+	private static string FormatMorphDisplayName( string value )
+	{
+		if ( string.IsNullOrWhiteSpace( value ) )
+		{
+			return value;
+		}
+
+		string display = value.Replace( "_", " ", StringComparison.Ordinal ).Trim();
+		while ( display.Contains( "  ", StringComparison.Ordinal ) )
+		{
+			display = display.Replace( "  ", " ", StringComparison.Ordinal );
+		}
+
+		return display;
 	}
 
 	private static void TryAddTriangle(

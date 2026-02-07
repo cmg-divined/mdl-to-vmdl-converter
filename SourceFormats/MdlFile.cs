@@ -38,6 +38,10 @@ public class MdlFile
 
 	// Flex descriptors and mesh flex data
 	public List<string> FlexDescriptors { get; } = new();
+	public List<MdlFlexController> FlexControllers { get; } = new();
+	public List<MdlFlexControllerUI> FlexControllerUIs { get; } = new();
+	public List<MdlFlexRule> FlexRules { get; } = new();
+	private Dictionary<int, string>? _resolvedFlexDisplayNames;
 
 	/// <summary>
 	/// Load an MDL file from a byte array.
@@ -109,6 +113,22 @@ public class MdlFile
 		if ( mdl.Header.FlexDescCount > 0 && mdl.Header.FlexDescIndex > 0 && mdl.Header.FlexDescIndex < fileLength )
 		{
 			mdl.ReadFlexDescriptors( reader );
+		}
+
+		// Read flex controllers/rules/UI names to resolve human-readable morph names.
+		if ( mdl.Header.FlexControllerCount > 0 && mdl.Header.FlexControllerIndex > 0 && mdl.Header.FlexControllerIndex < fileLength )
+		{
+			mdl.ReadFlexControllers( reader );
+		}
+
+		if ( mdl.Header.FlexRulesCount > 0 && mdl.Header.FlexRulesIndex > 0 && mdl.Header.FlexRulesIndex < fileLength )
+		{
+			mdl.ReadFlexRules( reader );
+		}
+
+		if ( mdl.Header.FlexControllerUICount > 0 && mdl.Header.FlexControllerUIIndex > 0 && mdl.Header.FlexControllerUIIndex < fileLength )
+		{
+			mdl.ReadFlexControllerUIs( reader );
 		}
 
 		// Read body parts (with bounds checking)
@@ -255,6 +275,536 @@ public class MdlFile
 		}
 
 		Log.Info( $"MdlFile: Read {FlexDescriptors.Count} flex descriptors" );
+	}
+
+	private void ReadFlexControllers( BinaryReader reader )
+	{
+		if ( Header.FlexControllerCount <= 0 || Header.FlexControllerIndex <= 0 )
+		{
+			return;
+		}
+
+		long fileLength = reader.BaseStream.Length;
+		const int flexControllerSize = 20;
+		reader.BaseStream.Position = Header.FlexControllerIndex;
+
+		for ( int i = 0; i < Header.FlexControllerCount; i++ )
+		{
+			long entryStart = reader.BaseStream.Position;
+			if ( entryStart + flexControllerSize > fileLength )
+			{
+				Log.Warning( $"MdlFile.ReadFlexControllers: controller {i} would exceed file bounds" );
+				break;
+			}
+
+			StudioFlexController controller = reader.ReadStruct<StudioFlexController>();
+			string type = controller.TypeOffset != 0
+				? reader.ReadStringAtOffset( entryStart, controller.TypeOffset )
+				: string.Empty;
+			string name = controller.NameOffset != 0
+				? reader.ReadStringAtOffset( entryStart, controller.NameOffset )
+				: string.Empty;
+
+			if ( string.IsNullOrWhiteSpace( name ) )
+			{
+				name = $"flex_controller_{i}";
+			}
+
+			FlexControllers.Add( new MdlFlexController
+			{
+				Index = i,
+				Type = type ?? string.Empty,
+				Name = name,
+				LocalToGlobal = controller.LocalToGlobal,
+				Min = controller.Min,
+				Max = controller.Max
+			} );
+
+			reader.BaseStream.Position = entryStart + flexControllerSize;
+		}
+
+		Log.Info( $"MdlFile: Read {FlexControllers.Count} flex controllers" );
+	}
+
+	private void ReadFlexRules( BinaryReader reader )
+	{
+		if ( Header.FlexRulesCount <= 0 || Header.FlexRulesIndex <= 0 )
+		{
+			return;
+		}
+
+		long fileLength = reader.BaseStream.Length;
+		const int ruleSize = 12;
+		const int opSize = 8;
+		reader.BaseStream.Position = Header.FlexRulesIndex;
+
+		for ( int i = 0; i < Header.FlexRulesCount; i++ )
+		{
+			long ruleStart = reader.BaseStream.Position;
+			if ( ruleStart + ruleSize > fileLength )
+			{
+				Log.Warning( $"MdlFile.ReadFlexRules: rule {i} would exceed file bounds" );
+				break;
+			}
+
+			StudioFlexRule rule = reader.ReadStruct<StudioFlexRule>();
+			var parsedRule = new MdlFlexRule
+			{
+				Index = i,
+				FlexDescIndex = rule.FlexIndex
+			};
+
+			if ( rule.OpCount > 0 && rule.OpOffset != 0 )
+			{
+				long opStart = ruleStart + rule.OpOffset;
+				if ( opStart > 0 && opStart < fileLength )
+				{
+					reader.BaseStream.Position = opStart;
+					for ( int opIndex = 0; opIndex < rule.OpCount; opIndex++ )
+					{
+						long currentOpStart = reader.BaseStream.Position;
+						if ( currentOpStart + opSize > fileLength )
+						{
+							Log.Warning( $"MdlFile.ReadFlexRules: op {opIndex} in rule {i} would exceed file bounds" );
+							break;
+						}
+
+						StudioFlexOp op = reader.ReadStruct<StudioFlexOp>();
+						bool isConst = op.Op == 1; // STUDIO_CONST
+						parsedRule.Operations.Add( new MdlFlexRuleOp
+						{
+							Op = op.Op,
+							Index = op.Value,
+							IsConst = isConst,
+							ConstValue = isConst ? BitConverter.Int32BitsToSingle( op.Value ) : 0f
+						} );
+					}
+				}
+			}
+
+			FlexRules.Add( parsedRule );
+			reader.BaseStream.Position = ruleStart + ruleSize;
+		}
+
+		Log.Info( $"MdlFile: Read {FlexRules.Count} flex rules" );
+	}
+
+	private void ReadFlexControllerUIs( BinaryReader reader )
+	{
+		if ( Header.FlexControllerUICount <= 0 || Header.FlexControllerUIIndex <= 0 )
+		{
+			return;
+		}
+
+		long fileLength = reader.BaseStream.Length;
+		const int uiSize = 20;
+		reader.BaseStream.Position = Header.FlexControllerUIIndex;
+
+		for ( int i = 0; i < Header.FlexControllerUICount; i++ )
+		{
+			long uiStart = reader.BaseStream.Position;
+			if ( uiStart + uiSize > fileLength )
+			{
+				Log.Warning( $"MdlFile.ReadFlexControllerUIs: ui {i} would exceed file bounds" );
+				break;
+			}
+
+			StudioFlexControllerUI ui = reader.ReadStruct<StudioFlexControllerUI>();
+			string name = ui.NameOffset != 0
+				? reader.ReadStringAtOffset( uiStart, ui.NameOffset )
+				: string.Empty;
+			bool stereo = ui.Stereo != 0;
+			byte remapType = ui.RemapType;
+
+			string controller = string.Empty;
+			string left = string.Empty;
+			string right = string.Empty;
+			string nway = string.Empty;
+
+			if ( stereo )
+			{
+				left = ReadControllerNameFromPointer( reader, uiStart, ui.Index0, fileLength );
+				right = ReadControllerNameFromPointer( reader, uiStart, ui.Index1, fileLength );
+			}
+			else
+			{
+				controller = ReadControllerNameFromPointer( reader, uiStart, ui.Index0, fileLength );
+			}
+
+			// RemapType 2 (NWAY) and 3 (EYELID) use index2 as an additional controller.
+			if ( remapType == 2 || remapType == 3 )
+			{
+				nway = ReadControllerNameFromPointer( reader, uiStart, ui.Index2, fileLength );
+			}
+
+			FlexControllerUIs.Add( new MdlFlexControllerUI
+			{
+				Index = i,
+				Name = name ?? string.Empty,
+				ControllerName = controller,
+				LeftControllerName = left,
+				RightControllerName = right,
+				NWayControllerName = nway,
+				RemapType = remapType,
+				Stereo = stereo
+			} );
+
+			reader.BaseStream.Position = uiStart + uiSize;
+		}
+
+		Log.Info( $"MdlFile: Read {FlexControllerUIs.Count} flex controller UI entries" );
+	}
+
+	private static string ReadControllerNameFromPointer( BinaryReader reader, long baseOffset, int relativeOffset, long fileLength )
+	{
+		if ( relativeOffset == 0 )
+		{
+			return string.Empty;
+		}
+
+		long controllerStart = baseOffset + relativeOffset;
+		if ( controllerStart <= 0 || controllerStart + 8 > fileLength )
+		{
+			return string.Empty;
+		}
+
+		long returnPosition = reader.BaseStream.Position;
+		try
+		{
+			reader.BaseStream.Position = controllerStart + 4; // mstudioflexcontroller_t::NameOffset
+			int nameOffset = reader.ReadInt32();
+			if ( nameOffset == 0 )
+			{
+				return string.Empty;
+			}
+
+			return reader.ReadStringAtOffset( controllerStart, nameOffset );
+		}
+		catch
+		{
+			return string.Empty;
+		}
+		finally
+		{
+			reader.BaseStream.Position = returnPosition;
+		}
+	}
+
+	public string ResolveFlexDisplayName( int flexDescIndex, string fallbackName )
+	{
+		if ( _resolvedFlexDisplayNames is null )
+		{
+			_resolvedFlexDisplayNames = BuildResolvedFlexDisplayNameMap();
+		}
+
+		if ( _resolvedFlexDisplayNames.TryGetValue( flexDescIndex, out string? resolved ) && !string.IsNullOrWhiteSpace( resolved ) )
+		{
+			return resolved;
+		}
+
+		return fallbackName;
+	}
+
+	private Dictionary<int, string> BuildResolvedFlexDisplayNameMap()
+	{
+		var result = new Dictionary<int, string>();
+		if ( FlexControllers.Count == 0 || FlexRules.Count == 0 )
+		{
+			return result;
+		}
+
+		Dictionary<string, string> controllerDisplayNames = BuildControllerDisplayNameMap();
+		var candidateByDesc = new Dictionary<int, string>();
+
+		foreach ( MdlFlexRule rule in FlexRules )
+		{
+			if ( rule.FlexDescIndex < 0 || rule.FlexDescIndex >= FlexDescriptors.Count )
+			{
+				continue;
+			}
+
+			string fallbackName = GetFlexName( rule.FlexDescIndex );
+			bool fallbackLooksCode = LooksLikeCodeFlexName( fallbackName );
+			string? bestCandidate = null;
+			int bestScore = int.MinValue;
+
+			foreach ( MdlFlexRuleOp op in rule.Operations )
+			{
+				if ( op.IsConst || !IsControllerFetchOp( op.Op ) )
+				{
+					continue;
+				}
+
+				if ( op.Index < 0 || op.Index >= FlexControllers.Count )
+				{
+					continue;
+				}
+
+				string controllerName = FlexControllers[op.Index].Name;
+				if ( string.IsNullOrWhiteSpace( controllerName ) )
+				{
+					continue;
+				}
+
+				string candidate = controllerDisplayNames.TryGetValue( controllerName, out string? display )
+					? display
+					: controllerName;
+				candidate = ApplySideHintFromFallback( candidate, fallbackName );
+
+				int score = ScoreDisplayNameCandidate( candidate, fallbackName, fallbackLooksCode );
+				if ( score > bestScore )
+				{
+					bestScore = score;
+					bestCandidate = candidate;
+				}
+			}
+
+			if ( !fallbackLooksCode )
+			{
+				// Preserve authored, descriptive flex descriptor names.
+				candidateByDesc[rule.FlexDescIndex] = fallbackName;
+				continue;
+			}
+
+			if ( string.IsNullOrWhiteSpace( bestCandidate ) )
+			{
+				candidateByDesc[rule.FlexDescIndex] = fallbackName;
+				continue;
+			}
+
+			candidateByDesc[rule.FlexDescIndex] = bestCandidate;
+		}
+
+		if ( candidateByDesc.Count == 0 )
+		{
+			return result;
+		}
+
+		var usedNames = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+		foreach ( KeyValuePair<int, string> pair in candidateByDesc.OrderBy( p => p.Key ) )
+		{
+			string finalName = pair.Value;
+			if ( !usedNames.Add( finalName ) )
+			{
+				string fallback = GetFlexName( pair.Key );
+				if ( !string.IsNullOrWhiteSpace( fallback ) )
+				{
+					string merged = $"{finalName}_{fallback}";
+					if ( usedNames.Add( merged ) )
+					{
+						finalName = merged;
+					}
+				}
+
+				if ( finalName.Equals( pair.Value, StringComparison.OrdinalIgnoreCase ) )
+				{
+					int suffix = 2;
+					string deduped;
+					do
+					{
+						deduped = $"{pair.Value}_{suffix}";
+						suffix++;
+					}
+					while ( !usedNames.Add( deduped ) );
+
+					finalName = deduped;
+				}
+			}
+			result[pair.Key] = finalName;
+		}
+
+		return result;
+	}
+
+	private Dictionary<string, string> BuildControllerDisplayNameMap()
+	{
+		var displayNames = new Dictionary<string, string>( StringComparer.OrdinalIgnoreCase );
+
+		foreach ( MdlFlexController controller in FlexControllers )
+		{
+			if ( !string.IsNullOrWhiteSpace( controller.Name ) )
+			{
+				displayNames[controller.Name] = controller.Name;
+			}
+		}
+
+		foreach ( MdlFlexControllerUI ui in FlexControllerUIs )
+		{
+			if ( string.IsNullOrWhiteSpace( ui.Name ) )
+			{
+				continue;
+			}
+
+			string uiName = ui.Name.Trim();
+			bool uiNameLooksCode = LooksLikeCodeFlexName( uiName );
+			if ( !ui.Stereo && !string.IsNullOrWhiteSpace( ui.ControllerName ) )
+			{
+				displayNames[ui.ControllerName] = uiNameLooksCode ? ui.ControllerName : uiName;
+				continue;
+			}
+
+			if ( ui.Stereo )
+			{
+				if ( !string.IsNullOrWhiteSpace( ui.LeftControllerName ) )
+				{
+					displayNames[ui.LeftControllerName] = uiNameLooksCode
+						? ui.LeftControllerName
+						: BuildStereoDisplayName( uiName, ui.LeftControllerName, isLeft: true );
+				}
+
+				if ( !string.IsNullOrWhiteSpace( ui.RightControllerName ) )
+				{
+					displayNames[ui.RightControllerName] = uiNameLooksCode
+						? ui.RightControllerName
+						: BuildStereoDisplayName( uiName, ui.RightControllerName, isLeft: false );
+				}
+			}
+		}
+
+		return displayNames;
+	}
+
+	private static string BuildStereoDisplayName( string uiName, string controllerName, bool isLeft )
+	{
+		if ( string.IsNullOrWhiteSpace( uiName ) )
+		{
+			return controllerName;
+		}
+
+		if ( uiName.IndexOf( "left", StringComparison.OrdinalIgnoreCase ) >= 0 ||
+			uiName.IndexOf( "right", StringComparison.OrdinalIgnoreCase ) >= 0 )
+		{
+			return uiName;
+		}
+
+		return $"{uiName}_{(isLeft ? "left" : "right")}";
+	}
+
+	private static bool IsControllerFetchOp( int op )
+	{
+		// Source op codes from studio.h:
+		// 2 FETCH1, 15 TWO_WAY_0, 16 TWO_WAY_1, 17 NWAY, 20 DME_LOWER_EYELID, 21 DME_UPPER_EYELID
+		return op == 2 || op == 15 || op == 16 || op == 17 || op == 20 || op == 21;
+	}
+
+	private static int ScoreDisplayNameCandidate( string candidate, string fallbackName, bool fallbackLooksCode )
+	{
+		if ( string.IsNullOrWhiteSpace( candidate ) )
+		{
+			return int.MinValue;
+		}
+
+		int score = 0;
+		bool candidateLooksCode = LooksLikeCodeFlexName( candidate );
+		if ( candidateLooksCode )
+		{
+			score -= 4;
+		}
+		else
+		{
+			score += 4;
+		}
+
+		if ( candidate.Contains( "_", StringComparison.Ordinal ) )
+		{
+			score++;
+		}
+
+		bool fallbackLeft = HasLeftHint( fallbackName );
+		bool fallbackRight = HasRightHint( fallbackName );
+		if ( fallbackLeft || fallbackRight )
+		{
+			bool candidateLeft = HasLeftHint( candidate );
+			bool candidateRight = HasRightHint( candidate );
+			if ( (fallbackLeft && candidateLeft) || (fallbackRight && candidateRight) )
+			{
+				score += 3;
+			}
+			else if ( (fallbackLeft && candidateRight) || (fallbackRight && candidateLeft) )
+			{
+				score -= 4;
+			}
+		}
+
+		if ( !fallbackLooksCode && candidate.Equals( fallbackName, StringComparison.OrdinalIgnoreCase ) )
+		{
+			score += 2;
+		}
+
+		return score;
+	}
+
+	private static string ApplySideHintFromFallback( string candidate, string fallbackName )
+	{
+		if ( string.IsNullOrWhiteSpace( candidate ) )
+		{
+			return candidate;
+		}
+
+		bool fallbackLeft = HasLeftHint( fallbackName );
+		bool fallbackRight = HasRightHint( fallbackName );
+		if ( !fallbackLeft && !fallbackRight )
+		{
+			return candidate;
+		}
+
+		if ( HasLeftHint( candidate ) || HasRightHint( candidate ) )
+		{
+			return candidate;
+		}
+
+		return $"{candidate}_{(fallbackLeft ? "left" : "right")}";
+	}
+
+	private static bool LooksLikeCodeFlexName( string? value )
+	{
+		if ( string.IsNullOrWhiteSpace( value ) )
+		{
+			return false;
+		}
+
+		string name = value.Trim();
+		if ( name.Length >= 3 )
+		{
+			string upper = name.ToUpperInvariant();
+			if ( (upper.StartsWith( "AU", StringComparison.Ordinal ) || upper.StartsWith( "AD", StringComparison.Ordinal )) &&
+				char.IsDigit( upper[2] ) )
+			{
+				return true;
+			}
+		}
+
+		if ( (name.StartsWith( "f", StringComparison.OrdinalIgnoreCase ) || name.StartsWith( "F", StringComparison.OrdinalIgnoreCase )) &&
+			name.Length >= 2 && char.IsDigit( name[1] ) )
+		{
+			return true;
+		}
+
+		return false;
+	}
+
+	private static bool HasLeftHint( string? value )
+	{
+		if ( string.IsNullOrWhiteSpace( value ) )
+		{
+			return false;
+		}
+
+		string name = value.Trim().ToLowerInvariant();
+		return name.Contains( "left", StringComparison.Ordinal ) || name.EndsWith( "_l", StringComparison.Ordinal ) ||
+			(name.EndsWith( "l", StringComparison.Ordinal ) && name.Length > 1 && char.IsDigit( name[^2] ));
+	}
+
+	private static bool HasRightHint( string? value )
+	{
+		if ( string.IsNullOrWhiteSpace( value ) )
+		{
+			return false;
+		}
+
+		string name = value.Trim().ToLowerInvariant();
+		return name.Contains( "right", StringComparison.Ordinal ) || name.EndsWith( "_r", StringComparison.Ordinal ) ||
+			(name.EndsWith( "r", StringComparison.Ordinal ) && name.Length > 1 && char.IsDigit( name[^2] ));
 	}
 
 	private void ReadBodyParts( BinaryReader reader )
@@ -746,7 +1296,7 @@ public class MdlFile
 
 							ushort index = reader.ReadUInt16();
 							reader.ReadByte(); // speed
-							reader.ReadByte(); // side
+							byte side = reader.ReadByte();
 
 							float deltaX = HalfToFloat( reader.ReadUInt16() );
 							float deltaY = HalfToFloat( reader.ReadUInt16() );
@@ -766,6 +1316,7 @@ public class MdlFile
 							mdlFlex.VertexAnimations.Add( new MdlFlexVertexAnimation
 							{
 								VertexIndex = index,
+								Side = side,
 								VertexDelta = new Vector3( deltaX, deltaY, deltaZ ),
 								NormalDelta = new Vector3( normalX, normalY, normalZ ),
 								WrinkleDelta = wrinkle,
@@ -862,6 +1413,55 @@ public class MdlMesh
 }
 
 /// <summary>
+/// Parsed flex controller data.
+/// </summary>
+public class MdlFlexController
+{
+	public int Index { get; set; }
+	public string Type { get; set; } = string.Empty;
+	public string Name { get; set; } = string.Empty;
+	public int LocalToGlobal { get; set; }
+	public float Min { get; set; }
+	public float Max { get; set; }
+}
+
+/// <summary>
+/// Parsed flex controller UI mapping data.
+/// </summary>
+public class MdlFlexControllerUI
+{
+	public int Index { get; set; }
+	public string Name { get; set; } = string.Empty;
+	public string ControllerName { get; set; } = string.Empty;
+	public string LeftControllerName { get; set; } = string.Empty;
+	public string RightControllerName { get; set; } = string.Empty;
+	public string NWayControllerName { get; set; } = string.Empty;
+	public byte RemapType { get; set; }
+	public bool Stereo { get; set; }
+}
+
+/// <summary>
+/// Parsed flex rule data.
+/// </summary>
+public class MdlFlexRule
+{
+	public int Index { get; set; }
+	public int FlexDescIndex { get; set; }
+	public List<MdlFlexRuleOp> Operations { get; } = new();
+}
+
+/// <summary>
+/// Parsed flex rule operation.
+/// </summary>
+public class MdlFlexRuleOp
+{
+	public int Op { get; set; }
+	public int Index { get; set; }
+	public bool IsConst { get; set; }
+	public float ConstValue { get; set; }
+}
+
+/// <summary>
 /// Parsed flex channel data attached to a mesh.
 /// </summary>
 public class MdlFlex
@@ -879,6 +1479,7 @@ public class MdlFlex
 public class MdlFlexVertexAnimation
 {
 	public int VertexIndex { get; set; }
+	public byte Side { get; set; }
 	public Vector3 VertexDelta { get; set; }
 	public Vector3 NormalDelta { get; set; }
 	public float WrinkleDelta { get; set; }
