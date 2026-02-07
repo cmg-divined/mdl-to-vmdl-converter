@@ -15,6 +15,7 @@ internal static class ConverterPipeline
 		BuildRenderMeshesAndBodyGroups( context );
 		BuildHitboxes( context );
 		BuildPhysics( context );
+		CollectSourceMaterials( context );
 
 		return context;
 	}
@@ -624,5 +625,22 @@ internal static class ConverterPipeline
 		if ( xRange >= yRange && xRange >= zRange ) return (c.XMin, c.XMax);
 		if ( yRange >= zRange ) return (c.YMin, c.YMax);
 		return (c.ZMin, c.ZMax);
+	}
+
+	private static void CollectSourceMaterials( BuildContext context )
+	{
+		foreach ( MeshExport mesh in context.Meshes )
+		{
+			foreach ( TriangleRecord triangle in mesh.Triangles )
+			{
+				string material = triangle.Material;
+				if ( string.IsNullOrWhiteSpace( material ) || string.Equals( material, "__skeleton_anchor", StringComparison.OrdinalIgnoreCase ) )
+				{
+					continue;
+				}
+
+				context.SourceMaterials.Add( material );
+			}
+		}
 	}
 }

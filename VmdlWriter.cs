@@ -17,6 +17,7 @@ internal static class VmdlWriter
 
 		WriteRenderMeshList( writer, context, 3 );
 		WriteBodyGroupList( writer, context, 3 );
+		WriteMaterialGroupList( writer, context, 3 );
 		WriteHitboxSetList( writer, context, 3 );
 		WritePhysicsShapeList( writer, context, 3 );
 		WritePhysicsBodyMarkupList( writer, context, 3 );
@@ -39,10 +40,14 @@ internal static class VmdlWriter
 		WriteLine( writer, indent + 1, "[" );
 		foreach ( MeshExport mesh in context.Meshes )
 		{
+			string meshFilePath = string.IsNullOrWhiteSpace( context.ModelAssetDirectory )
+				? mesh.FileName
+				: $"{context.ModelAssetDirectory.TrimEnd( '/' )}/{mesh.FileName}";
+
 			WriteLine( writer, indent + 2, "{" );
 			WriteLine( writer, indent + 3, "_class = \"RenderMeshFile\"" );
 			WriteLine( writer, indent + 3, $"name = \"{Escape( mesh.Name )}\"" );
-			WriteLine( writer, indent + 3, $"filename = \"{Escape( mesh.FileName.Replace( '\\', '/' ) )}\"" );
+			WriteLine( writer, indent + 3, $"filename = \"{Escape( meshFilePath.Replace( '\\', '/' ) )}\"" );
 			WriteLine( writer, indent + 3, "import_translation = [ 0.0, 0.0, 0.0 ]" );
 			WriteLine( writer, indent + 3, "import_rotation = [ 0.0, 0.0, 0.0 ]" );
 			WriteLine( writer, indent + 3, "import_scale = 1.0" );
@@ -92,6 +97,36 @@ internal static class VmdlWriter
 			WriteLine( writer, indent + 3, $"hidden_in_tools = {(group.HiddenInTools ? "true" : "false")}" );
 			WriteLine( writer, indent + 2, "}," );
 		}
+		WriteLine( writer, indent + 1, "]" );
+		WriteLine( writer, indent, "}," );
+	}
+
+	private static void WriteMaterialGroupList( StreamWriter writer, BuildContext context, int indent )
+	{
+		if ( context.MaterialRemaps.Count == 0 )
+		{
+			return;
+		}
+
+		WriteLine( writer, indent, "{" );
+		WriteLine( writer, indent + 1, "_class = \"MaterialGroupList\"" );
+		WriteLine( writer, indent + 1, "children =" );
+		WriteLine( writer, indent + 1, "[" );
+		WriteLine( writer, indent + 2, "{" );
+		WriteLine( writer, indent + 3, "_class = \"DefaultMaterialGroup\"" );
+		WriteLine( writer, indent + 3, "remaps =" );
+		WriteLine( writer, indent + 3, "[" );
+		foreach ( MaterialRemapExport remap in context.MaterialRemaps )
+		{
+			WriteLine( writer, indent + 4, "{" );
+			WriteLine( writer, indent + 5, $"from = \"{Escape( remap.From )}\"" );
+			WriteLine( writer, indent + 5, $"to = \"{Escape( remap.To )}\"" );
+			WriteLine( writer, indent + 4, "}," );
+		}
+		WriteLine( writer, indent + 3, "]" );
+		WriteLine( writer, indent + 3, "use_global_default = false" );
+		WriteLine( writer, indent + 3, "global_default_material = \"\"" );
+		WriteLine( writer, indent + 2, "}," );
 		WriteLine( writer, indent + 1, "]" );
 		WriteLine( writer, indent, "}," );
 	}

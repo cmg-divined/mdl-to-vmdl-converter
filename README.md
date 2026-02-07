@@ -1,121 +1,111 @@
 # MDL to VMDL Converter
 
-Direct converter for Source 1 model assets (`.mdl/.vvd/.vtx/.phy`) into s&box-friendly `.vmdl + .smd` output.
+Direct Source 1 to s&box model conversion.
 
-This project exists to migrate GMod/Source models to s&box without relying on FBX/OBJ conversion hops.
+Input:
+- `.mdl`
+- companion `.vvd` and `.vtx` (`.dx90.vtx` / `.dx80.vtx` / `.sw.vtx` / `.vtx`)
+- optional `.phy`
 
-## Current Status
+Output:
+- `.vmdl`
+- one `.smd` per mesh/bodygroup choice
+- optional material package (`.vmat` + `.tga`) generated from VMT/VTF
 
-Working and used in real test models:
+No FBX/OBJ conversion step is required.
 
-- Mesh extraction from `.mdl + .vvd + .vtx`
+## What Works
+
+- Mesh extraction from MDL/VVD/VTX
+- Bone hierarchy + skin weights
 - Bodygroups
-- Bone hierarchy export
-- Hitbox set export
-- Physics shape export
-- Physics body markup export
-- Physics joint export
-- Bone/body name normalization to match ModelDoc naming (`bip01_*` style)
+- Hitbox sets
+- Physics shape list
+- Physics body markup list
+- Physics joints
+- Bone/body canonicalization for ModelDoc (`ValveBiped_*` -> `bip01_*` style)
+- Material conversion pipeline:
+  - VMT parsing
+  - VTF decoding
+  - profile detection (`Source`, `ExoPBR`, `GPBR`, `MWB`, `BFT`, `MadIvan18`, eye shaders)
+  - VMAT generation + MaterialGroup remaps in VMDL
+- Path-preserving export from GMod model paths
 
-Not done yet:
+## GUI Usage
 
-- Material remap generation
-- Animation/sequence conversion
-- Attachments/IK/pose params passthrough
-- Authoring-quality physics orientation tuning (anchors are good enough for import, but still basic)
+Run without arguments to open the GUI.
 
-## What It Generates
+1. Pick your `.mdl`.
+2. Pick GMod root (`...\GarrysMod\garrysmod`) or let it auto-detect.
+3. Pick output root.
+4. Keep `Preserve models/... output path` enabled.
+5. Click `Convert`.
 
-For each input model, the converter outputs:
+Example input:
+`D:\SteamLibrary\steamapps\common\GarrysMod\garrysmod\models\madivan18\ww2\ukpara\sum\chr_alfred_a1pa.mdl`
 
-- One `.vmdl`
-- One `.smd` per render mesh/bodygroup choice
-- One internal skeleton-anchor `.smd` used to force full skeleton import
+With preserve-path enabled, model output lands at:
+`<outputRoot>\models\madivan18\ww2\ukpara\sum`
 
-Output is written to `<modelname>_converted` by default (or `--out` if specified).
+Materials are written under:
+`<outputRoot>\materials\...`
 
-## Requirements
+Custom shaders from `gmod_mount/assets/shaders` are copied to:
+`<outputRoot>\shaders`
 
-- .NET 10 SDK
-- Source 1 model files:
-  - required: `.mdl`, `.vvd`, one `.vtx` variant (`.dx90.vtx`, `.dx80.vtx`, `.sw.vtx`, or `.vtx`)
-  - optional: `.phy`
+## CLI Usage
+
+Basic:
+
+```powershell
+dotnet run --project MdlToVmdlConverter.csproj -- --mdl "C:\path\model.mdl"
+```
+
+Path-preserving export from GMod:
+
+```powershell
+dotnet run --project MdlToVmdlConverter.csproj -- `
+  --mdl "D:\SteamLibrary\steamapps\common\GarrysMod\garrysmod\models\madivan18\ww2\ukpara\sum\chr_alfred_a1pa.mdl" `
+  --gmod-root "D:\SteamLibrary\steamapps\common\GarrysMod\garrysmod" `
+  --out "C:\exports\my_addon" `
+  --preserve-path
+```
+
+Force a material profile (optional):
+
+```powershell
+--profile madivan18
+```
+
+Supported `--profile` values:
+- `auto`
+- `source`
+- `exo`
+- `gpbr`
+- `mwb`
+- `bft`
+- `madivan18`
+
+## Material Notes
+
+The converter generates a `MaterialGroupList` with remaps from SMD material names to generated VMATs.
+
+Material source lookup uses:
+1. MDL texture directories
+2. model-relative fallback path
+3. raw material token fallback
+
+When a VMT/VTF cannot be resolved, a fallback PBR VMAT is generated so import still succeeds.
+
+## Known Limitations
+
+- Animation/sequence conversion is not implemented.
+- Attachments/IK/pose params are not emitted yet.
+- Physics fitting is still conservative (box/sphere fallback strategy).
+- Joint orientation is still basic (`anchor_angles` is neutral).
 
 ## Build
 
 ```powershell
 dotnet build MdlToVmdlConverter.csproj
 ```
-
-## Usage
-
-Basic:
-
-```powershell
-dotnet run --project MdlToVmdlConverter.csproj -- "C:\path\model.mdl"
-```
-
-Custom output folder:
-
-```powershell
-dotnet run --project MdlToVmdlConverter.csproj -- "C:\path\model.mdl" --out "C:\path\out_model"
-```
-
-Explicit companion files:
-
-```powershell
-dotnet run --project MdlToVmdlConverter.csproj -- `
-  --mdl "C:\path\model.mdl" `
-  --vvd "C:\path\model.vvd" `
-  --vtx "C:\path\model.dx90.vtx" `
-  --phy "C:\path\model.phy" `
-  --out "C:\path\out_model" `
-  --vmdl "model.vmdl" `
-  --verbose
-```
-
-## How It Works
-
-1. Loads Source model data (`MdlFile`, `VvdFile`, `VtxFile`, optional `PhyFile`).
-2. Rebuilds triangles per body part/model from strip groups in VTX.
-3. Writes SMD meshes with weighted vertices and full node list.
-4. Builds bodygroup choices from MDL body part structure.
-5. Converts MDL hitboxes to ModelDoc hitbox capsules.
-6. Converts PHY convex data into basic physics shapes (currently box/sphere fallback).
-7. Converts PHY ragdoll constraints into conical/revolute joints.
-8. Emits a `.vmdl` graph (`RenderMeshList`, `BodyGroupList`, `HitboxSetList`, `PhysicsShapeList`, `PhysicsBodyMarkupList`, `PhysicsJointList`).
-
-## Notes About Bone Naming
-
-ModelDoc often canonicalizes imported Source-style names.  
-This converter now canonicalizes the same way for all references:
-
-- `ValveBiped_Bip01_Pelvis` -> `bip01_pelvis`
-- same canonical name is used in:
-  - SMD node names
-  - hitbox `parent_bone`
-  - physics shape `parent_bone`
-  - physics body/joint names
-
-This avoids `Unknown bone` / `Unknown physics body` errors during compile.
-
-## Known Limitations
-
-- Materials are not fully wired yet (geometry conversion first, shading later).
-- Physics shape fitting is coarse for now (AABB from convex hull vertices).
-- Joint anchor orientation is minimal (`anchor_angles` currently defaulted).
-- The skeleton anchor mesh is internal and hidden through an internal bodygroup, but still part of generated data by design.
-
-## Roadmap
-
-- Add material group generation and remap rules from MDL skin families.
-- Improve physics shape fitting (capsule/cylinder heuristics from hulls).
-- Better constraint orientation and limit axis mapping.
-- Export attachments and optional bone markup controls.
-- Optional animation sequence export path.
-
-## Credits
-
-- Uses parser logic adapted from local Source-format tooling in this workspace (`SourceFormats`).
-- Big thanks to Crowbar and Source reverse-engineering work over the years; this project stands on that ecosystem.
-

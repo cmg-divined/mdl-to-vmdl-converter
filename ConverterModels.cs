@@ -5,7 +5,10 @@ internal sealed class BuildContext
 	public required SourceModel SourceModel { get; init; }
 	public required string ModelBaseName { get; init; }
 	public required string OutputDirectory { get; init; }
+	public string ModelAssetDirectory { get; set; } = string.Empty;
 	public IReadOnlyList<string> ExportBoneNames { get; set; } = Array.Empty<string>();
+	public HashSet<string> SourceMaterials { get; } = new( StringComparer.OrdinalIgnoreCase );
+	public List<MaterialRemapExport> MaterialRemaps { get; } = new();
 	public List<MeshExport> Meshes { get; } = new();
 	public List<BodyGroupExport> BodyGroups { get; } = new();
 	public List<HitboxSetExport> HitboxSets { get; } = new();
@@ -32,6 +35,12 @@ internal sealed class BodyGroupChoiceExport
 {
 	public required string Name { get; init; }
 	public required List<string> Meshes { get; init; }
+}
+
+internal sealed class MaterialRemapExport
+{
+	public required string From { get; init; }
+	public required string To { get; init; }
 }
 
 internal sealed class HitboxSetExport
