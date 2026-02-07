@@ -3,10 +3,14 @@ using System.Windows.Forms;
 internal sealed class MainForm : Form
 {
 	private readonly TextBox _mdlPathTextBox = new();
+	private readonly TextBox _batchRootTextBox = new();
 	private readonly TextBox _gmodRootTextBox = new();
 	private readonly TextBox _outputRootTextBox = new();
 	private readonly TextBox _vmdlNameTextBox = new();
 	private readonly ComboBox _profileComboBox = new();
+	private readonly CheckBox _batchModeCheckBox = new();
+	private readonly CheckBox _recursiveBatchCheckBox = new();
+	private readonly NumericUpDown _threadsUpDown = new();
 	private readonly CheckBox _preservePathCheckBox = new();
 	private readonly CheckBox _materialsCheckBox = new();
 	private readonly CheckBox _copyShadersCheckBox = new();
@@ -50,9 +54,10 @@ internal sealed class MainForm : Form
 		inputPanel.ColumnStyles.Add( new ColumnStyle( SizeType.Absolute, 120f ) );
 
 		AddPathRow( inputPanel, 0, "Source MDL", _mdlPathTextBox, OnBrowseMdl );
-		AddPathRow( inputPanel, 1, "GMod Root", _gmodRootTextBox, OnBrowseGmodRoot );
-		AddPathRow( inputPanel, 2, "Output Root", _outputRootTextBox, OnBrowseOutputRoot );
-		AddTextRow( inputPanel, 3, "VMDL Name (optional)", _vmdlNameTextBox );
+		AddPathRow( inputPanel, 1, "Batch Root", _batchRootTextBox, OnBrowseBatchRoot );
+		AddPathRow( inputPanel, 2, "GMod Root", _gmodRootTextBox, OnBrowseGmodRoot );
+		AddPathRow( inputPanel, 3, "Output Root", _outputRootTextBox, OnBrowseOutputRoot );
+		AddTextRow( inputPanel, 4, "VMDL Name (optional)", _vmdlNameTextBox );
 
 		root.Controls.Add( inputPanel, 0, 0 );
 
@@ -77,6 +82,31 @@ internal sealed class MainForm : Form
 		_profileComboBox.Items.AddRange( Enum.GetNames<MaterialProfileOverride>() );
 		_profileComboBox.SelectedItem = MaterialProfileOverride.Auto.ToString();
 		optionsPanel.Controls.Add( _profileComboBox );
+
+		_batchModeCheckBox.Text = "Batch mode";
+		_batchModeCheckBox.AutoSize = true;
+		_batchModeCheckBox.Margin = new Padding( 18, 6, 0, 0 );
+		optionsPanel.Controls.Add( _batchModeCheckBox );
+
+		_recursiveBatchCheckBox.Text = "Recursive";
+		_recursiveBatchCheckBox.AutoSize = true;
+		_recursiveBatchCheckBox.Checked = true;
+		_recursiveBatchCheckBox.Margin = new Padding( 12, 6, 0, 0 );
+		optionsPanel.Controls.Add( _recursiveBatchCheckBox );
+
+		optionsPanel.Controls.Add( new Label
+		{
+			Text = "Threads:",
+			AutoSize = true,
+			Margin = new Padding( 12, 8, 4, 0 )
+		} );
+
+		_threadsUpDown.Minimum = 1;
+		_threadsUpDown.Maximum = 128;
+		_threadsUpDown.Value = Math.Max( 1, Environment.ProcessorCount );
+		_threadsUpDown.Width = 70;
+		_threadsUpDown.Margin = new Padding( 0, 4, 0, 0 );
+		optionsPanel.Controls.Add( _threadsUpDown );
 
 		_preservePathCheckBox.Text = "Preserve models/... output path";
 		_preservePathCheckBox.AutoSize = true;
@@ -198,6 +228,19 @@ internal sealed class MainForm : Form
 		}
 	}
 
+	private void OnBrowseBatchRoot( object? sender, EventArgs e )
+	{
+		using var dialog = new FolderBrowserDialog
+		{
+			Description = "Select a folder that contains .mdl files"
+		};
+
+		if ( dialog.ShowDialog( this ) == DialogResult.OK )
+		{
+			_batchRootTextBox.Text = dialog.SelectedPath;
+		}
+	}
+
 	private void OnBrowseOutputRoot( object? sender, EventArgs e )
 	{
 		using var dialog = new FolderBrowserDialog
@@ -214,15 +257,29 @@ internal sealed class MainForm : Form
 	private async Task ConvertAsync()
 	{
 		string mdlPath = _mdlPathTextBox.Text.Trim();
-		if ( string.IsNullOrWhiteSpace( mdlPath ) )
+		string batchRoot = _batchRootTextBox.Text.Trim();
+		bool batchMode = _batchModeCheckBox.Checked || !string.IsNullOrWhiteSpace( batchRoot );
+
+		if ( batchMode && string.IsNullOrWhiteSpace( batchRoot ) && Directory.Exists( mdlPath ) )
+		{
+			batchRoot = mdlPath;
+		}
+
+		if ( !batchMode && string.IsNullOrWhiteSpace( mdlPath ) )
 		{
 			MessageBox.Show( this, "Please choose an MDL file.", "Missing input", MessageBoxButtons.OK, MessageBoxIcon.Warning );
 			return;
 		}
 
-		if ( !File.Exists( mdlPath ) )
+		if ( !batchMode && !File.Exists( mdlPath ) )
 		{
 			MessageBox.Show( this, $"MDL file not found:\n{mdlPath}", "Missing file", MessageBoxButtons.OK, MessageBoxIcon.Warning );
+			return;
+		}
+
+		if ( batchMode && (string.IsNullOrWhiteSpace( batchRoot ) || !Directory.Exists( batchRoot )) )
+		{
+			MessageBox.Show( this, "Please choose a valid batch root folder.", "Missing batch folder", MessageBoxButtons.OK, MessageBoxIcon.Warning );
 			return;
 		}
 
@@ -241,7 +298,10 @@ internal sealed class MainForm : Form
 
 		var options = new ConverterOptions
 		{
-			MdlPath = Path.GetFullPath( mdlPath ),
+			MdlPath = batchMode ? null : Path.GetFullPath( mdlPath ),
+			BatchRootDirectory = batchMode ? Path.GetFullPath( batchRoot ) : null,
+			RecursiveSearch = _recursiveBatchCheckBox.Checked,
+			MaxParallelism = (int)_threadsUpDown.Value,
 			VvdPath = null,
 			VtxPath = null,
 			PhyPath = null,
@@ -258,23 +318,54 @@ internal sealed class MainForm : Form
 
 		_logTextBox.Clear();
 		_convertButton.Enabled = false;
-		AppendLog( "Starting conversion..." );
+		AppendLog( batchMode ? "Starting batch conversion..." : "Starting conversion..." );
 
 		try
 		{
-			ConversionSummary summary = await Task.Run( () =>
-				ConversionRunner.Run(
-					options,
-					message => AppendLog( message ),
-					warning => AppendLog( warning )
-				)
-			);
+			if ( options.IsBatchMode )
+			{
+				BatchConversionSummary summary = await Task.Run( () =>
+					ConversionRunner.RunBatch(
+						options,
+						message => AppendLog( message ),
+						warning => AppendLog( warning )
+					)
+				);
 
-			AppendLog( "Conversion complete." );
-			AppendLog( $"Model output: {summary.ModelOutputDirectory}" );
-			AppendLog( $"VMDL: {summary.VmdlPath}" );
-			AppendLog( $"SMD files: {summary.SmdCount}" );
-			AppendLog( $"Material remaps: {summary.MaterialRemapCount}" );
+				AppendLog( "Batch conversion complete." );
+				AppendLog( $"Output root: {summary.OutputRoot}" );
+				AppendLog( $"Models discovered: {summary.TotalModels}" );
+				AppendLog( $"Succeeded: {summary.Succeeded}" );
+				AppendLog( $"Failed: {summary.Failed}" );
+				AppendLog( $"Total SMD files: {summary.TotalSmdCount}" );
+				AppendLog( $"Total material remaps: {summary.TotalMaterialRemapCount}" );
+
+				if ( summary.Failures.Count > 0 )
+				{
+					AppendLog( "Failed models:" );
+					foreach ( BatchConversionFailure failure in summary.Failures )
+					{
+						AppendLog( $"  - {failure.MdlPath}" );
+						AppendLog( $"    {failure.Error}" );
+					}
+				}
+			}
+			else
+			{
+				ConversionSummary summary = await Task.Run( () =>
+					ConversionRunner.Run(
+						options,
+						message => AppendLog( message ),
+						warning => AppendLog( warning )
+					)
+				);
+
+				AppendLog( "Conversion complete." );
+				AppendLog( $"Model output: {summary.ModelOutputDirectory}" );
+				AppendLog( $"VMDL: {summary.VmdlPath}" );
+				AppendLog( $"SMD files: {summary.SmdCount}" );
+				AppendLog( $"Material remaps: {summary.MaterialRemapCount}" );
+			}
 		}
 		catch ( Exception ex )
 		{

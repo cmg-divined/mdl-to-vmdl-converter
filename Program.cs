@@ -14,6 +14,34 @@ internal static class Program
 		try
 		{
 			ConverterOptions options = ConverterOptions.Parse( args );
+		if ( options.IsBatchMode )
+		{
+			BatchConversionSummary summary = ConversionRunner.RunBatch(
+				options,
+				message => Console.WriteLine( message ),
+				warning => Console.Error.WriteLine( warning )
+			);
+
+			Console.WriteLine( "Batch conversion complete." );
+			Console.WriteLine( $"  Output root: {summary.OutputRoot}" );
+			Console.WriteLine( $"  Models discovered: {summary.TotalModels}" );
+			Console.WriteLine( $"  Succeeded: {summary.Succeeded}" );
+			Console.WriteLine( $"  Failed: {summary.Failed}" );
+			Console.WriteLine( $"  Total SMD files: {summary.TotalSmdCount}" );
+			Console.WriteLine( $"  Total Material remaps: {summary.TotalMaterialRemapCount}" );
+
+			if ( summary.Failures.Count > 0 )
+			{
+				Console.WriteLine( "  Failed models:" );
+				foreach ( BatchConversionFailure failure in summary.Failures )
+				{
+					Console.WriteLine( $"    - {failure.MdlPath}" );
+					Console.WriteLine( $"      {failure.Error}" );
+				}
+			}
+		}
+		else
+		{
 			ConversionSummary summary = ConversionRunner.Run(
 				options,
 				message => Console.WriteLine( message ),
@@ -29,6 +57,7 @@ internal static class Program
 			Console.WriteLine( $"  Physics shapes: {summary.PhysicsShapeCount}" );
 			Console.WriteLine( $"  Physics joints: {summary.PhysicsJointCount}" );
 			Console.WriteLine( $"  Material remaps: {summary.MaterialRemapCount}" );
+			}
 			return 0;
 		}
 		catch ( ArgumentException ex )
@@ -73,7 +102,10 @@ internal enum MaterialProfileOverride
 
 internal sealed class ConverterOptions
 {
-	public required string MdlPath { get; init; }
+	public string? MdlPath { get; init; }
+	public string? BatchRootDirectory { get; init; }
+	public bool RecursiveSearch { get; init; } = true;
+	public int MaxParallelism { get; init; } = Math.Max( 1, Environment.ProcessorCount );
 	public string? VvdPath { get; init; }
 	public string? VtxPath { get; init; }
 	public string? PhyPath { get; init; }
@@ -86,6 +118,7 @@ internal sealed class ConverterOptions
 	public bool CopyShaders { get; init; } = true;
 	public bool Verbose { get; init; }
 	public MaterialProfileOverride MaterialProfileOverride { get; init; } = MaterialProfileOverride.Auto;
+	public bool IsBatchMode => !string.IsNullOrWhiteSpace( BatchRootDirectory );
 
 	public static ConverterOptions Parse( string[] args )
 	{
@@ -95,6 +128,7 @@ internal sealed class ConverterOptions
 		}
 
 		string? mdl = null;
+		string? batchRoot = null;
 		string? vvd = null;
 		string? vtx = null;
 		string? phy = null;
@@ -103,9 +137,11 @@ internal sealed class ConverterOptions
 		string? gmodRoot = null;
 		string? shaderSource = null;
 		bool preservePath = true;
+		bool recursiveSearch = true;
 		bool convertMaterials = true;
 		bool copyShaders = true;
 		bool verbose = false;
+		int maxParallelism = Math.Max( 1, Environment.ProcessorCount );
 		MaterialProfileOverride profileOverride = MaterialProfileOverride.Auto;
 
 		for ( int i = 0; i < args.Length; i++ )
@@ -147,6 +183,18 @@ internal sealed class ConverterOptions
 				continue;
 			}
 
+			if ( string.Equals( arg, "--recursive", StringComparison.OrdinalIgnoreCase ) )
+			{
+				recursiveSearch = true;
+				continue;
+			}
+
+			if ( string.Equals( arg, "--no-recursive", StringComparison.OrdinalIgnoreCase ) )
+			{
+				recursiveSearch = false;
+				continue;
+			}
+
 			if ( string.Equals( arg, "--copy-shaders", StringComparison.OrdinalIgnoreCase ) )
 			{
 				copyShaders = true;
@@ -171,6 +219,7 @@ internal sealed class ConverterOptions
 				switch ( arg.ToLowerInvariant() )
 				{
 					case "--mdl": mdl = value; break;
+					case "--batch": batchRoot = value; break;
 					case "--vvd": vvd = value; break;
 					case "--vtx": vtx = value; break;
 					case "--phy": phy = value; break;
@@ -178,11 +227,17 @@ internal sealed class ConverterOptions
 					case "--vmdl": vmdlName = value; break;
 					case "--gmod-root": gmodRoot = value; break;
 					case "--shader-src": shaderSource = value; break;
+					case "--threads":
+						if ( !int.TryParse( value, out maxParallelism ) || maxParallelism <= 0 )
+						{
+							throw new ArgumentException( $"Invalid thread count: {value}" );
+						}
+						break;
 					case "--profile": profileOverride = ParseProfileOverride( value ); break;
 					default: throw new ArgumentException( $"Unknown option: {arg}" );
 				}
 			}
-			else if ( mdl is null )
+			else if ( mdl is null && batchRoot is null )
 			{
 				mdl = arg;
 			}
@@ -192,14 +247,36 @@ internal sealed class ConverterOptions
 			}
 		}
 
-		if ( string.IsNullOrWhiteSpace( mdl ) )
+		if ( string.IsNullOrWhiteSpace( mdl ) && string.IsNullOrWhiteSpace( batchRoot ) )
 		{
-			throw new ArgumentException( "You must pass an MDL path." );
+			throw new ArgumentException( "You must pass an MDL file path or a batch folder path." );
+		}
+
+		if ( !string.IsNullOrWhiteSpace( mdl ) && string.IsNullOrWhiteSpace( batchRoot ) && Directory.Exists( mdl ) )
+		{
+			batchRoot = mdl;
+			mdl = null;
+		}
+
+		if ( !string.IsNullOrWhiteSpace( mdl ) && !string.IsNullOrWhiteSpace( batchRoot ) )
+		{
+			throw new ArgumentException( "Use either --mdl or --batch, not both." );
+		}
+
+		if ( !string.IsNullOrWhiteSpace( batchRoot ) )
+		{
+			if ( !string.IsNullOrWhiteSpace( vvd ) || !string.IsNullOrWhiteSpace( vtx ) || !string.IsNullOrWhiteSpace( phy ) )
+			{
+				throw new ArgumentException( "--vvd/--vtx/--phy are only valid for single-model conversion." );
+			}
 		}
 
 		return new ConverterOptions
 		{
-			MdlPath = Path.GetFullPath( mdl ),
+			MdlPath = string.IsNullOrWhiteSpace( mdl ) ? null : Path.GetFullPath( mdl ),
+			BatchRootDirectory = string.IsNullOrWhiteSpace( batchRoot ) ? null : Path.GetFullPath( batchRoot ),
+			RecursiveSearch = recursiveSearch,
+			MaxParallelism = maxParallelism,
 			VvdPath = string.IsNullOrWhiteSpace( vvd ) ? null : Path.GetFullPath( vvd ),
 			VtxPath = string.IsNullOrWhiteSpace( vtx ) ? null : Path.GetFullPath( vtx ),
 			PhyPath = string.IsNullOrWhiteSpace( phy ) ? null : Path.GetFullPath( phy ),
@@ -242,9 +319,14 @@ internal sealed class ConverterOptions
 		Console.WriteLine( "Usage:" );
 		Console.WriteLine( "  MdlToVmdlConverter <model.mdl> [--out <dir>] [--vmdl <name>]" );
 		Console.WriteLine( "  MdlToVmdlConverter --mdl <model.mdl> [--vvd <file>] [--vtx <file>] [--phy <file>] [--out <dir>]" );
+		Console.WriteLine( "  MdlToVmdlConverter --batch <modelsDir> [--recursive] [--threads <n>] [--out <dir>]" );
 		Console.WriteLine();
 		Console.WriteLine( "Options:" );
 		Console.WriteLine( "  --gmod-root <dir>      Garry's Mod garrysmod folder (contains models/materials)" );
+		Console.WriteLine( "  --batch <dir>          Convert all .mdl files under this folder" );
+		Console.WriteLine( "  --recursive            Include subfolders in batch mode (default)" );
+		Console.WriteLine( "  --no-recursive         Only convert .mdl files in the batch root folder" );
+		Console.WriteLine( "  --threads <n>          Parallel workers in batch mode (default: CPU count)" );
 		Console.WriteLine( "  --preserve-path        Export to models/<relative model path> under --out (default)" );
 		Console.WriteLine( "  --no-preserve-path     Export directly into --out" );
 		Console.WriteLine( "  --materials            Convert VMT/VTF to VMAT/TGA (default)" );

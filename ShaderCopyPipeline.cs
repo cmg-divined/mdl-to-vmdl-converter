@@ -48,6 +48,18 @@ internal static class ShaderCopyPipeline
 			}
 		}
 
+		string? fromCurrentLocal = FindConverterShaderFolderUpTree( Directory.GetCurrentDirectory() );
+		if ( !string.IsNullOrWhiteSpace( fromCurrentLocal ) )
+		{
+			return fromCurrentLocal;
+		}
+
+		string? fromAppBaseLocal = FindConverterShaderFolderUpTree( AppContext.BaseDirectory );
+		if ( !string.IsNullOrWhiteSpace( fromAppBaseLocal ) )
+		{
+			return fromAppBaseLocal;
+		}
+
 		string? fromCurrent = FindGmodShaderFolderUpTree( Directory.GetCurrentDirectory() );
 		if ( !string.IsNullOrWhiteSpace( fromCurrent ) )
 		{
@@ -58,6 +70,29 @@ internal static class ShaderCopyPipeline
 		if ( !string.IsNullOrWhiteSpace( fromAppBase ) )
 		{
 			return fromAppBase;
+		}
+
+		return null;
+	}
+
+	private static string? FindConverterShaderFolderUpTree( string startDirectory )
+	{
+		DirectoryInfo? dir = new DirectoryInfo( startDirectory );
+		while ( dir is not null )
+		{
+			string direct = Path.Combine( dir.FullName, "shaders" );
+			if ( Directory.Exists( direct ) )
+			{
+				return direct;
+			}
+
+			string nested = Path.Combine( dir.FullName, "MdlToVmdlConverter", "shaders" );
+			if ( Directory.Exists( nested ) )
+			{
+				return nested;
+			}
+
+			dir = dir.Parent;
 		}
 
 		return null;

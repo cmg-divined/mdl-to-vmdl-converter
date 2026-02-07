@@ -50,10 +50,18 @@ Output:
 
 Run without arguments to open the GUI.
 
+Single model:
 1. Pick your `.mdl`.
 2. Pick GMod root (`...\GarrysMod\garrysmod`) or let auto-detect fill it.
 3. Pick output root.
 4. Keep `Preserve models/... output path` enabled.
+5. Click `Convert`.
+
+Batch:
+1. Enable `Batch mode`.
+2. Set `Batch Root` to a folder that contains `.mdl` files.
+3. Keep `Recursive` enabled to include subfolders.
+4. Set `Threads` to control parallel conversion workers.
 5. Click `Convert`.
 
 Example input:
@@ -86,6 +94,17 @@ dotnet run --project MdlToVmdlConverter.csproj -- `
   --preserve-path
 ```
 
+Batch convert a folder recursively with 8 workers:
+
+```powershell
+dotnet run --project MdlToVmdlConverter.csproj -- `
+  --batch "D:\SteamLibrary\steamapps\common\GarrysMod\garrysmod\models\madivan18" `
+  --gmod-root "D:\SteamLibrary\steamapps\common\GarrysMod\garrysmod" `
+  --out "C:\exports\my_addon" `
+  --threads 8 `
+  --recursive
+```
+
 Force a material profile (optional):
 
 ```powershell
@@ -100,6 +119,11 @@ Supported `--profile` values:
 - `mwb`
 - `bft`
 - `madivan18`
+
+Other useful flags:
+- `--batch <dir>` convert all `.mdl` files under a folder
+- `--recursive` / `--no-recursive` folder traversal behavior in batch mode
+- `--threads <n>` parallel worker count in batch mode
 
 ## Material Notes
 

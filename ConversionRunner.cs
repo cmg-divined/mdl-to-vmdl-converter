@@ -1,4 +1,5 @@
 using GModMount.Source;
+using System.Collections.Concurrent;
 
 internal sealed class ConversionSummary
 {
@@ -12,6 +13,23 @@ internal sealed class ConversionSummary
 	public int MaterialRemapCount { get; init; }
 }
 
+internal sealed class BatchConversionFailure
+{
+	public required string MdlPath { get; init; }
+	public required string Error { get; init; }
+}
+
+internal sealed class BatchConversionSummary
+{
+	public required string OutputRoot { get; init; }
+	public int TotalModels { get; init; }
+	public int Succeeded { get; init; }
+	public int Failed { get; init; }
+	public int TotalSmdCount { get; init; }
+	public int TotalMaterialRemapCount { get; init; }
+	public required IReadOnlyList<BatchConversionFailure> Failures { get; init; }
+}
+
 internal static class ConversionRunner
 {
 	public static ConversionSummary Run( ConverterOptions options, Action<string>? info = null, Action<string>? warn = null )
@@ -21,13 +39,129 @@ internal static class ConversionRunner
 
 		Log.Verbose = options.Verbose;
 
+		if ( string.IsNullOrWhiteSpace( options.MdlPath ) )
+		{
+			throw new ArgumentException( "Single-model conversion requires --mdl <file>." );
+		}
+
 		if ( !File.Exists( options.MdlPath ) )
 		{
 			throw new FileNotFoundException( $"MDL not found: {options.MdlPath}" );
 		}
 
-		string modelBaseName = Path.GetFileNameWithoutExtension( options.MdlPath );
-		string modelDir = Path.GetDirectoryName( options.MdlPath ) ?? Directory.GetCurrentDirectory();
+		return RunSingle( options, options.MdlPath, options.CopyShaders, info, warn );
+	}
+
+	public static BatchConversionSummary RunBatch( ConverterOptions options, Action<string>? info = null, Action<string>? warn = null )
+	{
+		info ??= _ => { };
+		warn ??= _ => { };
+
+		Log.Verbose = options.Verbose;
+
+		if ( string.IsNullOrWhiteSpace( options.BatchRootDirectory ) )
+		{
+			throw new ArgumentException( "Batch conversion requires --batch <folder>." );
+		}
+
+		string batchRoot = Path.GetFullPath( options.BatchRootDirectory );
+		if ( !Directory.Exists( batchRoot ) )
+		{
+			throw new DirectoryNotFoundException( $"Batch folder not found: {batchRoot}" );
+		}
+
+		SearchOption searchOption = options.RecursiveSearch ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+		List<string> mdlPaths = Directory.EnumerateFiles( batchRoot, "*.mdl", searchOption )
+			.OrderBy( p => p, StringComparer.OrdinalIgnoreCase )
+			.ToList();
+
+		if ( mdlPaths.Count == 0 )
+		{
+			throw new FileNotFoundException( $"No .mdl files found under: {batchRoot}" );
+		}
+
+		string outputRoot = string.IsNullOrWhiteSpace( options.OutputDirectory )
+			? Path.Combine( batchRoot, "_converted" )
+			: options.OutputDirectory;
+		Directory.CreateDirectory( outputRoot );
+
+		if ( !string.IsNullOrWhiteSpace( options.VmdlFileName ) )
+		{
+			warn( "[warn] --vmdl is ignored in batch mode; output file names use each model's base name." );
+		}
+
+		if ( options.ConvertMaterials && options.CopyShaders )
+		{
+			ShaderCopyPipeline.Copy( options, outputRoot, info, warn );
+		}
+
+		var failures = new ConcurrentBag<BatchConversionFailure>();
+		int succeeded = 0;
+		int failed = 0;
+		int totalSmdCount = 0;
+		int totalMaterialRemapCount = 0;
+
+		var parallelOptions = new ParallelOptions
+		{
+			MaxDegreeOfParallelism = Math.Max( 1, options.MaxParallelism )
+		};
+
+		info( $"Batch conversion started: {mdlPaths.Count} model(s), threads={parallelOptions.MaxDegreeOfParallelism}, recursive={options.RecursiveSearch}" );
+
+		Parallel.ForEach( mdlPaths, parallelOptions, mdlPath =>
+		{
+			string display = Path.GetRelativePath( batchRoot, mdlPath ).Replace( '\\', '/' );
+			Action<string> scopedInfo = message => info( $"[{display}] {message}" );
+			Action<string> scopedWarn = message => warn( $"[{display}] {message}" );
+
+			try
+			{
+				ConverterOptions singleOptions = CreateSingleOptionsForBatch( options, mdlPath, outputRoot );
+				ConversionSummary summary = RunSingle( singleOptions, mdlPath, copyShaders: false, scopedInfo, scopedWarn );
+				Interlocked.Increment( ref succeeded );
+				Interlocked.Add( ref totalSmdCount, summary.SmdCount );
+				Interlocked.Add( ref totalMaterialRemapCount, summary.MaterialRemapCount );
+				scopedInfo( $"OK -> {summary.VmdlPath}" );
+			}
+			catch ( Exception ex )
+			{
+				Interlocked.Increment( ref failed );
+				failures.Add( new BatchConversionFailure
+				{
+					MdlPath = mdlPath,
+					Error = ex.Message
+				} );
+				scopedWarn( $"[fail] {ex.Message}" );
+			}
+		} );
+
+		List<BatchConversionFailure> orderedFailures = failures
+			.OrderBy( f => f.MdlPath, StringComparer.OrdinalIgnoreCase )
+			.ToList();
+
+		info( $"Batch finished. success={succeeded}, failed={failed}, smd={totalSmdCount}, remaps={totalMaterialRemapCount}" );
+
+		return new BatchConversionSummary
+		{
+			OutputRoot = outputRoot,
+			TotalModels = mdlPaths.Count,
+			Succeeded = succeeded,
+			Failed = failed,
+			TotalSmdCount = totalSmdCount,
+			TotalMaterialRemapCount = totalMaterialRemapCount,
+			Failures = orderedFailures
+		};
+	}
+
+	private static ConversionSummary RunSingle(
+		ConverterOptions options,
+		string mdlPath,
+		bool copyShaders,
+		Action<string> info,
+		Action<string> warn )
+	{
+		string modelBaseName = Path.GetFileNameWithoutExtension( mdlPath );
+		string modelDir = Path.GetDirectoryName( mdlPath ) ?? Directory.GetCurrentDirectory();
 
 		string vvdPath = options.VvdPath ?? Path.Combine( modelDir, modelBaseName + ".vvd" );
 		string vtxPath = options.VtxPath ?? ResolveVtxPath( modelDir, modelBaseName );
@@ -47,18 +181,18 @@ internal static class ConversionRunner
 			throw new FileNotFoundException( $"VTX not found: {vtxPath}" );
 		}
 
-		string? gmodRoot = ResolveGmodRoot( options.GmodRootDirectory, options.MdlPath );
+		string? gmodRoot = ResolveGmodRoot( options.GmodRootDirectory, mdlPath );
 		string outputRoot = string.IsNullOrWhiteSpace( options.OutputDirectory )
 			? Path.Combine( modelDir, modelBaseName + "_converted" )
 			: options.OutputDirectory;
-		string modelOutputDirectory = ResolveModelOutputDirectory( options, outputRoot, gmodRoot, options.MdlPath );
+		string modelOutputDirectory = ResolveModelOutputDirectory( options, outputRoot, gmodRoot, mdlPath );
 
 		Directory.CreateDirectory( outputRoot );
 		Directory.CreateDirectory( modelOutputDirectory );
 
 		info( "Loading Source model..." );
 		SourceModel sourceModel = SourceModel.Load(
-			options.MdlPath,
+			mdlPath,
 			vvdPath,
 			vtxPath,
 			string.IsNullOrEmpty( phyPath ) ? null! : phyPath
@@ -79,14 +213,14 @@ internal static class ConversionRunner
 				options,
 				outputRoot,
 				gmodRoot,
-				options.MdlPath,
+				mdlPath,
 				info,
 				warn
 			);
 
 			buildContext.MaterialRemaps.AddRange( materialResult.Remaps );
 
-			if ( options.CopyShaders )
+			if ( copyShaders )
 			{
 				ShaderCopyPipeline.Copy( options, outputRoot, info, warn );
 			}
@@ -115,6 +249,29 @@ internal static class ConversionRunner
 			PhysicsShapeCount = buildContext.PhysicsShapes.Count,
 			PhysicsJointCount = buildContext.PhysicsJoints.Count,
 			MaterialRemapCount = buildContext.MaterialRemaps.Count
+		};
+	}
+
+	private static ConverterOptions CreateSingleOptionsForBatch( ConverterOptions baseOptions, string mdlPath, string outputRoot )
+	{
+		return new ConverterOptions
+		{
+			MdlPath = mdlPath,
+			BatchRootDirectory = null,
+			RecursiveSearch = baseOptions.RecursiveSearch,
+			MaxParallelism = baseOptions.MaxParallelism,
+			VvdPath = null,
+			VtxPath = null,
+			PhyPath = null,
+			OutputDirectory = outputRoot,
+			VmdlFileName = string.Empty,
+			GmodRootDirectory = baseOptions.GmodRootDirectory,
+			ShaderSourceDirectory = baseOptions.ShaderSourceDirectory,
+			PreserveModelRelativePath = baseOptions.PreserveModelRelativePath,
+			ConvertMaterials = baseOptions.ConvertMaterials,
+			CopyShaders = baseOptions.CopyShaders,
+			Verbose = baseOptions.Verbose,
+			MaterialProfileOverride = baseOptions.MaterialProfileOverride
 		};
 	}
 
