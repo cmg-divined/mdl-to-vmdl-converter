@@ -16,6 +16,14 @@ internal static class ConverterPipeline
 		BuildHitboxes( context );
 		BuildPhysics( context );
 		CollectSourceMaterials( context );
+		List<string> morphChannels = context.Meshes
+			.SelectMany( m => m.Morphs )
+			.Select( m => m.Name )
+			.Distinct( StringComparer.OrdinalIgnoreCase )
+			.OrderBy( n => n, StringComparer.OrdinalIgnoreCase )
+			.ToList();
+		context.MorphChannels.AddRange( morphChannels );
+		context.MorphChannelCount = morphChannels.Count;
 
 		return context;
 	}
@@ -63,7 +71,7 @@ internal static class ConverterPipeline
 				}
 
 				VtxLodData lod = vtxModel!.Lods[0];
-				List<TriangleRecord> triangles = BuildModelTriangles( mdl, lod, mdlModel, vertices, bodyPartVertexIndexStart, isStaticProp );
+				(List<TriangleRecord> triangles, List<MeshMorphExport> morphs) = BuildModelGeometry( mdl, lod, mdlModel, vertices, bodyPartVertexIndexStart, isStaticProp );
 				if ( triangles.Count == 0 )
 				{
 					choices.Add( new BodyGroupChoiceExport
@@ -81,7 +89,8 @@ internal static class ConverterPipeline
 				{
 					Name = meshName,
 					FileName = fileName,
-					Triangles = triangles
+					Triangles = triangles,
+					Morphs = morphs
 				} );
 
 				nonEmptyChoiceCount++;
@@ -144,7 +153,8 @@ internal static class ConverterPipeline
 		{
 			Name = anchorMeshName,
 			FileName = NameUtil.CleanFileName( $"{context.ModelBaseName}_skeleton_anchor.smd" ),
-			Triangles = triangles
+			Triangles = triangles,
+			Morphs = new List<MeshMorphExport>()
 		} );
 
 		context.BodyGroups.Add( new BodyGroupExport
@@ -172,6 +182,7 @@ internal static class ConverterPipeline
 		return new VertexRecord
 		{
 			PrimaryBone = boneIndex,
+			SourceVertexIndex = -1,
 			Position = new Vector3( x, y, z ),
 			Normal = new Vector3( 0f, 0f, 1f ),
 			Uv = new Vector2( 0f, 0f ),
@@ -181,7 +192,7 @@ internal static class ConverterPipeline
 		};
 	}
 
-	private static List<TriangleRecord> BuildModelTriangles(
+	private static (List<TriangleRecord> Triangles, List<MeshMorphExport> Morphs) BuildModelGeometry(
 		MdlFile mdl,
 		VtxLodData lod,
 		MdlModel mdlModel,
@@ -246,7 +257,80 @@ internal static class ConverterPipeline
 			}
 		}
 
-		return triangles;
+		List<MeshMorphExport> morphs = BuildModelMorphs( mdlModel, bodyPartVertexIndexStart );
+		return (triangles, morphs);
+	}
+
+	private static List<MeshMorphExport> BuildModelMorphs( MdlModel mdlModel, int bodyPartVertexIndexStart )
+	{
+		var perMorph = new Dictionary<string, Dictionary<int, MeshMorphDeltaExport>>( StringComparer.OrdinalIgnoreCase );
+
+		foreach ( MdlMesh mdlMesh in mdlModel.Meshes )
+		{
+			if ( mdlMesh.Flexes.Count == 0 )
+			{
+				continue;
+			}
+
+			foreach ( MdlFlex flex in mdlMesh.Flexes )
+			{
+				if ( flex.VertexAnimations.Count == 0 )
+				{
+					continue;
+				}
+
+				string morphName = NameUtil.CleanName( flex.Name, $"flex_{flex.FlexDescIndex}" );
+				if ( !perMorph.TryGetValue( morphName, out Dictionary<int, MeshMorphDeltaExport>? deltaMap ) )
+				{
+					deltaMap = new Dictionary<int, MeshMorphDeltaExport>();
+					perMorph[morphName] = deltaMap;
+				}
+
+				foreach ( MdlFlexVertexAnimation vertAnim in flex.VertexAnimations )
+				{
+					int sourceVertexIndex = bodyPartVertexIndexStart + mdlMesh.VertexOffset + vertAnim.VertexIndex;
+					if ( deltaMap.TryGetValue( sourceVertexIndex, out MeshMorphDeltaExport existing ) )
+					{
+						deltaMap[sourceVertexIndex] = new MeshMorphDeltaExport
+						{
+							SourceVertexIndex = sourceVertexIndex,
+							PositionDelta = existing.PositionDelta + vertAnim.VertexDelta,
+							NormalDelta = existing.NormalDelta + vertAnim.NormalDelta
+						};
+					}
+					else
+					{
+						deltaMap[sourceVertexIndex] = new MeshMorphDeltaExport
+						{
+							SourceVertexIndex = sourceVertexIndex,
+							PositionDelta = vertAnim.VertexDelta,
+							NormalDelta = vertAnim.NormalDelta
+						};
+					}
+				}
+			}
+		}
+
+		var result = new List<MeshMorphExport>( perMorph.Count );
+		foreach ( KeyValuePair<string, Dictionary<int, MeshMorphDeltaExport>> pair in perMorph.OrderBy( p => p.Key, StringComparer.OrdinalIgnoreCase ) )
+		{
+			List<MeshMorphDeltaExport> deltas = pair.Value
+				.Values
+				.OrderBy( d => d.SourceVertexIndex )
+				.ToList();
+			if ( deltas.Count == 0 )
+			{
+				continue;
+			}
+
+			result.Add( new MeshMorphExport
+			{
+				Name = pair.Key,
+				Deltas = deltas
+			} );
+		}
+
+		return result;
 	}
 
 	private static void TryAddTriangle(
@@ -304,6 +388,7 @@ internal static class ConverterPipeline
 		}
 
 		vertex = VertexRecord.FromVvd( vertices[vertexIndex], isStaticProp );
+		vertex.SourceVertexIndex = vertexIndex;
 		return true;
 	}
 

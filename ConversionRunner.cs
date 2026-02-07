@@ -6,11 +6,13 @@ internal sealed class ConversionSummary
 	public required string ModelOutputDirectory { get; init; }
 	public required string VmdlPath { get; init; }
 	public int SmdCount { get; init; }
+	public int DmxCount { get; init; }
 	public int BodyGroupCount { get; init; }
 	public int HitboxSetCount { get; init; }
 	public int PhysicsShapeCount { get; init; }
 	public int PhysicsJointCount { get; init; }
 	public int MaterialRemapCount { get; init; }
+	public int MorphChannelCount { get; init; }
 }
 
 internal sealed class BatchConversionFailure
@@ -26,7 +28,9 @@ internal sealed class BatchConversionSummary
 	public int Succeeded { get; init; }
 	public int Failed { get; init; }
 	public int TotalSmdCount { get; init; }
+	public int TotalDmxCount { get; init; }
 	public int TotalMaterialRemapCount { get; init; }
+	public int TotalMorphChannelCount { get; init; }
 	public required IReadOnlyList<BatchConversionFailure> Failures { get; init; }
 }
 
@@ -104,7 +108,9 @@ internal static class ConversionRunner
 		int succeeded = 0;
 		int failed = 0;
 		int totalSmdCount = 0;
+		int totalDmxCount = 0;
 		int totalMaterialRemapCount = 0;
+		int totalMorphChannelCount = 0;
 
 		var parallelOptions = new ParallelOptions
 		{
@@ -125,7 +131,9 @@ internal static class ConversionRunner
 				ConversionSummary summary = RunSingle( singleOptions, mdlPath, copyShaders: false, scopedInfo, scopedWarn );
 				Interlocked.Increment( ref succeeded );
 				Interlocked.Add( ref totalSmdCount, summary.SmdCount );
+				Interlocked.Add( ref totalDmxCount, summary.DmxCount );
 				Interlocked.Add( ref totalMaterialRemapCount, summary.MaterialRemapCount );
+				Interlocked.Add( ref totalMorphChannelCount, summary.MorphChannelCount );
 				scopedInfo( $"OK -> {summary.VmdlPath}" );
 			}
 			catch ( Exception ex )
@@ -144,7 +152,7 @@ internal static class ConversionRunner
 			.OrderBy( f => f.MdlPath, StringComparer.OrdinalIgnoreCase )
 			.ToList();
 
-		info( $"Batch finished. success={succeeded}, failed={failed}, smd={totalSmdCount}, remaps={totalMaterialRemapCount}" );
+		info( $"Batch finished. success={succeeded}, failed={failed}, smd={totalSmdCount}, dmx={totalDmxCount}, remaps={totalMaterialRemapCount}, morphs={totalMorphChannelCount}" );
 
 		return new BatchConversionSummary
 		{
@@ -153,7 +161,9 @@ internal static class ConversionRunner
 			Succeeded = succeeded,
 			Failed = failed,
 			TotalSmdCount = totalSmdCount,
+			TotalDmxCount = totalDmxCount,
 			TotalMaterialRemapCount = totalMaterialRemapCount,
+			TotalMorphChannelCount = totalMorphChannelCount,
 			Failures = orderedFailures
 		};
 	}
@@ -206,9 +216,22 @@ internal static class ConversionRunner
 		BuildContext buildContext = ConverterPipeline.Build( sourceModel, modelBaseName, modelOutputDirectory );
 		buildContext.ModelAssetDirectory = ToAssetRelativePath( outputRoot, modelOutputDirectory );
 
+		int smdCount = 0;
+		int dmxCount = 0;
 		foreach ( MeshExport mesh in buildContext.Meshes )
 		{
-			SmdWriter.WriteMesh( Path.Combine( modelOutputDirectory, mesh.FileName ), buildContext, mesh );
+			if ( mesh.Morphs.Count > 0 )
+			{
+				string dmxFileName = Path.ChangeExtension( mesh.FileName, ".dmx" ) ?? (mesh.FileName + ".dmx");
+				mesh.FileName = dmxFileName;
+				DmxWriter.WriteMesh( Path.Combine( modelOutputDirectory, dmxFileName ), buildContext, mesh );
+				dmxCount++;
+			}
+			else
+			{
+				SmdWriter.WriteMesh( Path.Combine( modelOutputDirectory, mesh.FileName ), buildContext, mesh );
+				smdCount++;
+			}
 		}
 
 		if ( options.ConvertMaterials )
@@ -248,12 +271,14 @@ internal static class ConversionRunner
 		{
 			ModelOutputDirectory = modelOutputDirectory,
 			VmdlPath = vmdlPath,
-			SmdCount = buildContext.Meshes.Count,
+			SmdCount = smdCount,
+			DmxCount = dmxCount,
 			BodyGroupCount = buildContext.BodyGroups.Count,
 			HitboxSetCount = buildContext.HitboxSets.Count,
 			PhysicsShapeCount = buildContext.PhysicsShapes.Count,
 			PhysicsJointCount = buildContext.PhysicsJoints.Count,
-			MaterialRemapCount = buildContext.MaterialRemaps.Count
+			MaterialRemapCount = buildContext.MaterialRemaps.Count,
+			MorphChannelCount = buildContext.MorphChannelCount
 		};
 	}
 

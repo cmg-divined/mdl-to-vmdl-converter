@@ -36,6 +36,9 @@ public class MdlFile
 	// Eyeballs (for eye shader rendering)
 	public List<MdlEyeball> Eyeballs { get; } = new();
 
+	// Flex descriptors and mesh flex data
+	public List<string> FlexDescriptors { get; } = new();
+
 	/// <summary>
 	/// Load an MDL file from a byte array.
 	/// </summary>
@@ -100,6 +103,12 @@ public class MdlFile
 		if ( mdl.Header.BoneCount > 0 && mdl.Header.BoneOffset > 0 && mdl.Header.BoneOffset < fileLength )
 		{
 			mdl.ReadBones( reader );
+		}
+
+		// Read flex descriptors (names) before body parts/meshes.
+		if ( mdl.Header.FlexDescCount > 0 && mdl.Header.FlexDescIndex > 0 && mdl.Header.FlexDescIndex < fileLength )
+		{
+			mdl.ReadFlexDescriptors( reader );
 		}
 
 		// Read body parts (with bounds checking)
@@ -208,6 +217,44 @@ public class MdlFile
 			reader.BaseStream.Position = boneStart + boneSize;
 		}
 		Log.Info( $"MdlFile: Read {Bones.Count} bones" );
+	}
+
+	private void ReadFlexDescriptors( BinaryReader reader )
+	{
+		if ( Header.FlexDescCount <= 0 || Header.FlexDescIndex <= 0 )
+		{
+			return;
+		}
+
+		long fileLength = reader.BaseStream.Length;
+		reader.BaseStream.Position = Header.FlexDescIndex;
+
+		for ( int i = 0; i < Header.FlexDescCount; i++ )
+		{
+			long descStart = reader.BaseStream.Position;
+			if ( descStart + 4 > fileLength )
+			{
+				Log.Warning( $"MdlFile.ReadFlexDescriptors: descriptor {i} would exceed file bounds" );
+				break;
+			}
+
+			int nameOffset = reader.ReadInt32();
+			string name = $"flex_{i}";
+
+			if ( nameOffset > 0 )
+			{
+				string readName = reader.ReadStringAtOffset( descStart, nameOffset );
+				if ( !string.IsNullOrWhiteSpace( readName ) )
+				{
+					name = readName;
+				}
+			}
+
+			FlexDescriptors.Add( name );
+			reader.BaseStream.Position = descStart + 4;
+		}
+
+		Log.Info( $"MdlFile: Read {FlexDescriptors.Count} flex descriptors" );
 	}
 
 	private void ReadBodyParts( BinaryReader reader )
@@ -319,8 +366,7 @@ public class MdlFile
 							}
 							
 							var mesh = reader.ReadStruct<StudioMesh>();
-
-							mdlModel.Meshes.Add( new MdlMesh
+							var mdlMesh = new MdlMesh
 							{
 								Index = k,
 								MaterialIndex = mesh.Material,
@@ -329,7 +375,14 @@ public class MdlFile
 								VertexCount = mesh.VertexCount,
 								VertexOffset = mesh.VertexOffset,
 								Center = mesh.Center
-							} );
+							};
+
+							if ( mesh.FlexCount > 0 && mesh.FlexOffset > 0 )
+							{
+								mdlMesh.Flexes.AddRange( ReadMeshFlexes( reader, meshStart, mesh, fileLength ) );
+							}
+
+							mdlModel.Meshes.Add( mdlMesh );
 						}
 					}
 					
@@ -639,6 +692,119 @@ public class MdlFile
 		}
 		Log.Info( $"MdlFile: Read {HitboxSets.Count} hitbox sets" );
 	}
+
+	private List<MdlFlex> ReadMeshFlexes( BinaryReader reader, long meshStart, StudioMesh mesh, long fileLength )
+	{
+		var result = new List<MdlFlex>();
+		long returnPosition = reader.BaseStream.Position;
+		const int studioFlexSize = 60;
+
+		try
+		{
+			long flexArrayStart = meshStart + mesh.FlexOffset;
+			if ( flexArrayStart <= 0 || flexArrayStart >= fileLength )
+			{
+				return result;
+			}
+
+			reader.BaseStream.Position = flexArrayStart;
+			for ( int i = 0; i < mesh.FlexCount; i++ )
+			{
+				long flexStart = reader.BaseStream.Position;
+				if ( flexStart + studioFlexSize > fileLength )
+				{
+					Log.Warning( $"MdlFile.ReadMeshFlexes: flex {i} would exceed file bounds" );
+					break;
+				}
+
+				var flex = reader.ReadStruct<StudioFlex>();
+				var mdlFlex = new MdlFlex
+				{
+					FlexDescIndex = flex.FlexDescIndex,
+					Name = GetFlexName( flex.FlexDescIndex ),
+					PartnerIndex = flex.PartnerIndex,
+					VertexAnimType = flex.VertAnimType
+				};
+
+				if ( flex.VertCount > 0 && flex.VertOffset > 0 )
+				{
+					long vertAnimStart = flexStart + flex.VertOffset;
+					if ( vertAnimStart > 0 && vertAnimStart < fileLength )
+					{
+						reader.BaseStream.Position = vertAnimStart;
+						bool hasWrinkle = flex.VertAnimType == 1;
+						int vertAnimSize = hasWrinkle ? 18 : 16;
+
+						for ( int v = 0; v < flex.VertCount; v++ )
+						{
+							long animStart = reader.BaseStream.Position;
+							if ( animStart + vertAnimSize > fileLength )
+							{
+								Log.Warning( $"MdlFile.ReadMeshFlexes: vertex animation {v} would exceed file bounds" );
+								break;
+							}
+
+							ushort index = reader.ReadUInt16();
+							reader.ReadByte(); // speed
+							reader.ReadByte(); // side
+
+							float deltaX = HalfToFloat( reader.ReadUInt16() );
+							float deltaY = HalfToFloat( reader.ReadUInt16() );
+							float deltaZ = HalfToFloat( reader.ReadUInt16() );
+							float normalX = HalfToFloat( reader.ReadUInt16() );
+							float normalY = HalfToFloat( reader.ReadUInt16() );
+							float normalZ = HalfToFloat( reader.ReadUInt16() );
+
+							float wrinkle = 0f;
+							bool hasWrinkleDelta = false;
+							if ( hasWrinkle )
+							{
+								wrinkle = HalfToFloat( reader.ReadUInt16() );
+								hasWrinkleDelta = true;
+							}
+
+							mdlFlex.VertexAnimations.Add( new MdlFlexVertexAnimation
+							{
+								VertexIndex = index,
+								VertexDelta = new Vector3( deltaX, deltaY, deltaZ ),
+								NormalDelta = new Vector3( normalX, normalY, normalZ ),
+								WrinkleDelta = wrinkle,
+								HasWrinkleDelta = hasWrinkleDelta
+							} );
+						}
+					}
+				}
+
+				result.Add( mdlFlex );
+				reader.BaseStream.Position = flexStart + studioFlexSize;
+			}
+		}
+		finally
+		{
+			reader.BaseStream.Position = returnPosition;
+		}
+
+		return result;
+	}
+
+	private string GetFlexName( int flexDescIndex )
+	{
+		if ( flexDescIndex >= 0 && flexDescIndex < FlexDescriptors.Count )
+		{
+			string name = FlexDescriptors[flexDescIndex];
+			if ( !string.IsNullOrWhiteSpace( name ) )
+			{
+				return name;
+			}
+		}
+
+		return $"flex_{flexDescIndex}";
+	}
+
+	private static float HalfToFloat( ushort bits )
+	{
+		return (float)BitConverter.UInt16BitsToHalf( bits );
+	}
 }
 
 /// <summary>
@@ -692,6 +858,31 @@ public class MdlMesh
 	public int VertexCount { get; set; }
 	public int VertexOffset { get; set; }
 	public Vector3 Center { get; set; }
+	public List<MdlFlex> Flexes { get; } = new();
+}
+
+/// <summary>
+/// Parsed flex channel data attached to a mesh.
+/// </summary>
+public class MdlFlex
+{
+	public int FlexDescIndex { get; set; }
+	public string Name { get; set; } = string.Empty;
+	public int PartnerIndex { get; set; }
+	public byte VertexAnimType { get; set; }
+	public List<MdlFlexVertexAnimation> VertexAnimations { get; } = new();
+}
+
+/// <summary>
+/// Parsed flex vertex delta.
+/// </summary>
+public class MdlFlexVertexAnimation
+{
+	public int VertexIndex { get; set; }
+	public Vector3 VertexDelta { get; set; }
+	public Vector3 NormalDelta { get; set; }
+	public float WrinkleDelta { get; set; }
+	public bool HasWrinkleDelta { get; set; }
 }
 
 /// <summary>

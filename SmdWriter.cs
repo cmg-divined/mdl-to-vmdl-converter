@@ -7,6 +7,7 @@ internal static class SmdWriter
 		using var writer = new StreamWriter( path, false, Encoding.ASCII );
 		SourceModel sourceModel = context.SourceModel;
 		IReadOnlyList<string> exportBoneNames = context.ExportBoneNames;
+		var writtenVertices = new List<VertexRecord>( mesh.Triangles.Count * 3 );
 
 		writer.WriteLine( "version 1" );
 		writer.WriteLine( "nodes" );
@@ -34,10 +35,42 @@ internal static class SmdWriter
 		{
 			writer.WriteLine( triangle.Material );
 			WriteVertex( writer, triangle.V0 );
+			writtenVertices.Add( triangle.V0 );
 			WriteVertex( writer, triangle.V1 );
+			writtenVertices.Add( triangle.V1 );
 			WriteVertex( writer, triangle.V2 );
+			writtenVertices.Add( triangle.V2 );
 		}
 		writer.WriteLine( "end" );
+
+		if ( mesh.Morphs.Count > 0 )
+		{
+			// Keep a sidecar map for future DMX/blendshape work, but do not write
+			// SMD vertexanimation blocks because s&box's SMD parser rejects them.
+			WriteMorphMapSidecar( path, mesh.Morphs );
+		}
+	}
+
+	private static void WriteMorphMapSidecar( string smdPath, List<MeshMorphExport> morphs )
+	{
+		var ordered = morphs
+			.OrderBy( m => m.Name, StringComparer.OrdinalIgnoreCase )
+			.ToList();
+		if ( ordered.Count == 0 )
+		{
+			return;
+		}
+
+		string mapPath = smdPath + ".morphmap.txt";
+		using var writer = new StreamWriter( mapPath, false, Encoding.ASCII );
+		writer.WriteLine( "# SMD vertexanimation time -> source flex channel name" );
+		writer.WriteLine( "# time 0 is bind pose" );
+		int time = 1;
+		foreach ( MeshMorphExport morph in ordered )
+		{
+			writer.WriteLine( $"{time}\t{morph.Name}\t{morph.Deltas.Count}" );
+			time++;
+		}
 	}
 
 	private static void WriteVertex( StreamWriter writer, VertexRecord v )

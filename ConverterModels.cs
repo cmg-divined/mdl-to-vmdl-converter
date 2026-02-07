@@ -15,13 +15,29 @@ internal sealed class BuildContext
 	public List<PhysicsShapeExport> PhysicsShapes { get; } = new();
 	public List<PhysicsBodyMarkupExport> PhysicsBodies { get; } = new();
 	public List<PhysicsJointExport> PhysicsJoints { get; } = new();
+	public List<string> MorphChannels { get; } = new();
+	public int MorphChannelCount { get; set; }
 }
 
 internal sealed class MeshExport
 {
 	public required string Name { get; init; }
-	public required string FileName { get; init; }
+	public required string FileName { get; set; }
 	public required List<TriangleRecord> Triangles { get; init; }
+	public required List<MeshMorphExport> Morphs { get; init; }
+}
+
+internal sealed class MeshMorphExport
+{
+	public required string Name { get; init; }
+	public required List<MeshMorphDeltaExport> Deltas { get; init; }
+}
+
+internal sealed class MeshMorphDeltaExport
+{
+	public int SourceVertexIndex { get; init; }
+	public Vector3 PositionDelta { get; init; }
+	public Vector3 NormalDelta { get; init; }
 }
 
 internal sealed class BodyGroupExport
@@ -139,6 +155,7 @@ internal struct TriangleRecord
 internal struct VertexRecord
 {
 	public int PrimaryBone;
+	public int SourceVertexIndex;
 	public Vector3 Position;
 	public Vector3 Normal;
 	public Vector2 Uv;
@@ -200,6 +217,7 @@ internal struct VertexRecord
 		return new VertexRecord
 		{
 			PrimaryBone = bones[0],
+			SourceVertexIndex = -1,
 			Position = position,
 			Normal = normal,
 			Uv = vertex.TexCoord,

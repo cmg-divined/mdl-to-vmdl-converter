@@ -76,7 +76,7 @@ public class SourceModel
 		{
 			Log.Info( $"SourceModel: Parsing MDL ({mdlData.Length} bytes)..." );
 			model.Mdl = MdlFile.Load( mdlData );
-			Log.Info( $"SourceModel: MDL parsed - v{model.Mdl.Version}, {model.Mdl.Bones.Count} bones, {model.Mdl.BodyParts.Count} bodyparts, {model.Mdl.Materials.Count} materials" );
+			Log.Info( $"SourceModel: MDL parsed - v{model.Mdl.Version}, {model.Mdl.Bones.Count} bones, {model.Mdl.BodyParts.Count} bodyparts, {model.Mdl.Materials.Count} materials, {model.Mdl.FlexDescriptors.Count} flex descriptors" );
 		}
 		catch ( Exception ex )
 		{

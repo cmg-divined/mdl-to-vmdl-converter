@@ -348,7 +348,9 @@ internal sealed class MainForm : Form
 				AppendLog( $"Succeeded: {summary.Succeeded}" );
 				AppendLog( $"Failed: {summary.Failed}" );
 				AppendLog( $"Total SMD files: {summary.TotalSmdCount}" );
+				AppendLog( $"Total DMX files: {summary.TotalDmxCount}" );
 				AppendLog( $"Total material remaps: {summary.TotalMaterialRemapCount}" );
+				AppendLog( $"Total morph channels: {summary.TotalMorphChannelCount}" );
 
 				if ( summary.Failures.Count > 0 )
 				{
@@ -374,7 +376,9 @@ internal sealed class MainForm : Form
 				AppendLog( $"Model output: {summary.ModelOutputDirectory}" );
 				AppendLog( $"VMDL: {summary.VmdlPath}" );
 				AppendLog( $"SMD files: {summary.SmdCount}" );
+				AppendLog( $"DMX files: {summary.DmxCount}" );
 				AppendLog( $"Material remaps: {summary.MaterialRemapCount}" );
+				AppendLog( $"Morph channels: {summary.MorphChannelCount}" );
 			}
 		}
 		catch ( Exception ex )

@@ -261,6 +261,69 @@ public struct StudioMesh
 }
 
 /// <summary>
+/// Flex descriptor entry (mstudioflexdesc_t).
+/// </summary>
+[StructLayout( LayoutKind.Sequential, Pack = 1 )]
+public struct StudioFlexDesc
+{
+	public int NameOffset;
+}
+
+/// <summary>
+/// Flex entry on a mesh (mstudioflex_t) for MDL v44+.
+/// </summary>
+[StructLayout( LayoutKind.Sequential, Pack = 1 )]
+public struct StudioFlex
+{
+	public int FlexDescIndex;
+	public float Target0;
+	public float Target1;
+	public float Target2;
+	public float Target3;
+	public int VertCount;
+	public int VertOffset;
+	public int PartnerIndex;
+	public byte VertAnimType;
+	public unsafe fixed byte UnusedChar[3];
+	public unsafe fixed int Unused[6];
+}
+
+/// <summary>
+/// Flex vertex animation entry (mstudiovertanim_t) for normal flex data.
+/// </summary>
+[StructLayout( LayoutKind.Sequential, Pack = 1 )]
+public struct StudioVertAnim
+{
+	public ushort VertexIndex;
+	public byte Speed;
+	public byte Side;
+	public ushort DeltaX;
+	public ushort DeltaY;
+	public ushort DeltaZ;
+	public ushort NDeltaX;
+	public ushort NDeltaY;
+	public ushort NDeltaZ;
+}
+
+/// <summary>
+/// Flex vertex animation entry (mstudiovertanim_wrinkle_t).
+/// </summary>
+[StructLayout( LayoutKind.Sequential, Pack = 1 )]
+public struct StudioVertAnimWrinkle
+{
+	public ushort VertexIndex;
+	public byte Speed;
+	public byte Side;
+	public ushort DeltaX;
+	public ushort DeltaY;
+	public ushort DeltaZ;
+	public ushort NDeltaX;
+	public ushort NDeltaY;
+	public ushort NDeltaZ;
+	public ushort WrinkleDelta;
+}
+
+/// <summary>
 /// Vertex data info within a mesh.
 /// </summary>
 [StructLayout( LayoutKind.Sequential, Pack = 1 )]

@@ -28,7 +28,9 @@ internal static class Program
 			Console.WriteLine( $"  Succeeded: {summary.Succeeded}" );
 			Console.WriteLine( $"  Failed: {summary.Failed}" );
 			Console.WriteLine( $"  Total SMD files: {summary.TotalSmdCount}" );
+			Console.WriteLine( $"  Total DMX files: {summary.TotalDmxCount}" );
 			Console.WriteLine( $"  Total Material remaps: {summary.TotalMaterialRemapCount}" );
+			Console.WriteLine( $"  Total Morph channels: {summary.TotalMorphChannelCount}" );
 
 			if ( summary.Failures.Count > 0 )
 			{
@@ -52,11 +54,13 @@ internal static class Program
 			Console.WriteLine( $"  Model output: {summary.ModelOutputDirectory}" );
 			Console.WriteLine( $"  VMDL: {summary.VmdlPath}" );
 			Console.WriteLine( $"  SMD files: {summary.SmdCount}" );
+			Console.WriteLine( $"  DMX files: {summary.DmxCount}" );
 			Console.WriteLine( $"  Bodygroups: {summary.BodyGroupCount}" );
 			Console.WriteLine( $"  Hitbox sets: {summary.HitboxSetCount}" );
 			Console.WriteLine( $"  Physics shapes: {summary.PhysicsShapeCount}" );
 			Console.WriteLine( $"  Physics joints: {summary.PhysicsJointCount}" );
 			Console.WriteLine( $"  Material remaps: {summary.MaterialRemapCount}" );
+			Console.WriteLine( $"  Morph channels: {summary.MorphChannelCount}" );
 			}
 			return 0;
 		}
