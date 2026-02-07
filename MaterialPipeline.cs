@@ -1,4 +1,5 @@
 using GModMount.Source;
+using System.Collections.Concurrent;
 
 internal sealed class MaterialConversionResult
 {
@@ -9,6 +10,8 @@ internal sealed class MaterialConversionResult
 
 internal static class MaterialPipeline
 {
+	private static readonly ConcurrentDictionary<string, object> FileWriteLocks = new( StringComparer.OrdinalIgnoreCase );
+
 	private sealed class RgbaImage
 	{
 		public required int Width { get; init; }
@@ -582,7 +585,7 @@ internal static class MaterialPipeline
 	{
 		string relativePath = $"materials/{sourceMaterialPath}_{suffix}.tga".Replace( '\\', '/' );
 		string fullPath = Path.Combine( outputRoot, relativePath.Replace( '/', Path.DirectorySeparatorChar ) );
-		TgaWriter.WriteRgba32( fullPath, image.Width, image.Height, image.Pixels );
+		WriteWithFileLock( fullPath, () => TgaWriter.WriteRgba32( fullPath, image.Width, image.Height, image.Pixels ) );
 		return relativePath;
 	}
 
@@ -640,7 +643,8 @@ internal static class MaterialPipeline
 		}
 
 		sb.AppendLine( "}" );
-		File.WriteAllText( vmatAbsolutePath, sb.ToString(), new UTF8Encoding( false ) );
+		string contents = sb.ToString();
+		WriteWithFileLock( vmatAbsolutePath, () => File.WriteAllText( vmatAbsolutePath, contents, new UTF8Encoding( false ) ) );
 	}
 
 	private static void WriteEyeVmat( string vmatAbsolutePath, string irisPath, string corneaPath, ExtractedPbrProperties props )
@@ -655,7 +659,18 @@ internal static class MaterialPipeline
 		AppendKeyValue( sb, "Cornea", corneaPath );
 		AppendKeyValue( sb, "g_flGlossiness", FmtFloat( props.EyeGlossiness ) );
 		sb.AppendLine( "}" );
-		File.WriteAllText( vmatAbsolutePath, sb.ToString(), new UTF8Encoding( false ) );
+		string contents = sb.ToString();
+		WriteWithFileLock( vmatAbsolutePath, () => File.WriteAllText( vmatAbsolutePath, contents, new UTF8Encoding( false ) ) );
+	}
+
+	private static void WriteWithFileLock( string path, Action writer )
+	{
+		string fullPath = Path.GetFullPath( path );
+		object gate = FileWriteLocks.GetOrAdd( fullPath, _ => new object() );
+		lock ( gate )
+		{
+			writer();
+		}
 	}
 
 	private static void AppendKeyValue( StringBuilder sb, string key, string value )

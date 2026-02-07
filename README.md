@@ -60,9 +60,10 @@ Single model:
 Batch:
 1. Enable `Batch mode`.
 2. Set `Batch Root` to a folder that contains `.mdl` files.
-3. Keep `Recursive` enabled to include subfolders.
-4. Set `Threads` to control parallel conversion workers.
-5. Click `Convert`.
+3. GMod root is auto-detected from that path when possible (`.../garrysmod`).
+4. Keep `Recursive` enabled to include subfolders.
+5. Set `Threads` to control parallel conversion workers.
+6. Click `Convert`.
 
 Example input:
 `D:\SteamLibrary\steamapps\common\GarrysMod\garrysmod\models\madivan18\ww2\ukpara\sum\chr_alfred_a1pa.mdl`

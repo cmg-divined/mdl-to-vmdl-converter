@@ -238,6 +238,16 @@ internal sealed class MainForm : Form
 		if ( dialog.ShowDialog( this ) == DialogResult.OK )
 		{
 			_batchRootTextBox.Text = dialog.SelectedPath;
+			_batchModeCheckBox.Checked = true;
+
+			if ( string.IsNullOrWhiteSpace( _gmodRootTextBox.Text ) )
+			{
+				string? gmodRoot = ConversionRunner.ResolveGmodRoot( null, dialog.SelectedPath );
+				if ( !string.IsNullOrWhiteSpace( gmodRoot ) )
+				{
+					_gmodRootTextBox.Text = gmodRoot;
+				}
+			}
 		}
 	}
 

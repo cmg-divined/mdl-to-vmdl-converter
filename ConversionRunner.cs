@@ -84,6 +84,11 @@ internal static class ConversionRunner
 			? Path.Combine( batchRoot, "_converted" )
 			: options.OutputDirectory;
 		Directory.CreateDirectory( outputRoot );
+		string? batchGmodRoot = ResolveGmodRoot( options.GmodRootDirectory, batchRoot );
+		if ( !string.IsNullOrWhiteSpace( batchGmodRoot ) && string.IsNullOrWhiteSpace( options.GmodRootDirectory ) )
+		{
+			info( $"Auto-detected GMod root: {batchGmodRoot}" );
+		}
 
 		if ( !string.IsNullOrWhiteSpace( options.VmdlFileName ) )
 		{
@@ -116,7 +121,7 @@ internal static class ConversionRunner
 
 			try
 			{
-				ConverterOptions singleOptions = CreateSingleOptionsForBatch( options, mdlPath, outputRoot );
+				ConverterOptions singleOptions = CreateSingleOptionsForBatch( options, mdlPath, outputRoot, batchGmodRoot );
 				ConversionSummary summary = RunSingle( singleOptions, mdlPath, copyShaders: false, scopedInfo, scopedWarn );
 				Interlocked.Increment( ref succeeded );
 				Interlocked.Add( ref totalSmdCount, summary.SmdCount );
@@ -252,7 +257,7 @@ internal static class ConversionRunner
 		};
 	}
 
-	private static ConverterOptions CreateSingleOptionsForBatch( ConverterOptions baseOptions, string mdlPath, string outputRoot )
+	private static ConverterOptions CreateSingleOptionsForBatch( ConverterOptions baseOptions, string mdlPath, string outputRoot, string? batchGmodRoot )
 	{
 		return new ConverterOptions
 		{
@@ -265,7 +270,7 @@ internal static class ConversionRunner
 			PhyPath = null,
 			OutputDirectory = outputRoot,
 			VmdlFileName = string.Empty,
-			GmodRootDirectory = baseOptions.GmodRootDirectory,
+			GmodRootDirectory = string.IsNullOrWhiteSpace( baseOptions.GmodRootDirectory ) ? batchGmodRoot : baseOptions.GmodRootDirectory,
 			ShaderSourceDirectory = baseOptions.ShaderSourceDirectory,
 			PreserveModelRelativePath = baseOptions.PreserveModelRelativePath,
 			ConvertMaterials = baseOptions.ConvertMaterials,
@@ -336,41 +341,83 @@ internal static class ConversionRunner
 		return true;
 	}
 
-	internal static string? ResolveGmodRoot( string? explicitRoot, string mdlPath )
+	internal static string? ResolveGmodRoot( string? explicitRoot, string referencePath )
 	{
 		if ( !string.IsNullOrWhiteSpace( explicitRoot ) )
 		{
 			string normalized = Path.GetFullPath( explicitRoot );
-			string directModels = Path.Combine( normalized, "models" );
-			string directMaterials = Path.Combine( normalized, "materials" );
-			if ( Directory.Exists( directModels ) && Directory.Exists( directMaterials ) )
+			if ( IsValidGmodRoot( normalized ) )
 			{
 				return normalized;
 			}
 
 			string nested = Path.Combine( normalized, "garrysmod" );
-			string nestedModels = Path.Combine( nested, "models" );
-			string nestedMaterials = Path.Combine( nested, "materials" );
-			if ( Directory.Exists( nestedModels ) && Directory.Exists( nestedMaterials ) )
+			if ( IsValidGmodRoot( nested ) )
 			{
 				return nested;
 			}
 		}
 
-		DirectoryInfo? dir = new DirectoryInfo( Path.GetDirectoryName( mdlPath ) ?? string.Empty );
+		DirectoryInfo? dir = GetSearchStartDirectory( referencePath );
 		while ( dir is not null )
 		{
-			if ( string.Equals( dir.Name, "models", StringComparison.OrdinalIgnoreCase )
-				&& dir.Parent is not null
-				&& string.Equals( dir.Parent.Name, "garrysmod", StringComparison.OrdinalIgnoreCase ) )
+			if ( IsValidGmodRoot( dir.FullName ) )
 			{
-				return dir.Parent.FullName;
+				return dir.FullName;
+			}
+
+			string nested = Path.Combine( dir.FullName, "garrysmod" );
+			if ( IsValidGmodRoot( nested ) )
+			{
+				return nested;
+			}
+
+			if ( string.Equals( dir.Name, "models", StringComparison.OrdinalIgnoreCase ) && dir.Parent is not null )
+			{
+				if ( string.Equals( dir.Parent.Name, "garrysmod", StringComparison.OrdinalIgnoreCase ) && IsValidGmodRoot( dir.Parent.FullName ) )
+				{
+					return dir.Parent.FullName;
+				}
 			}
 
 			dir = dir.Parent;
 		}
 
 		return null;
+	}
+
+	private static bool IsValidGmodRoot( string rootDirectory )
+	{
+		if ( string.IsNullOrWhiteSpace( rootDirectory ) )
+		{
+			return false;
+		}
+
+		string models = Path.Combine( rootDirectory, "models" );
+		string materials = Path.Combine( rootDirectory, "materials" );
+		return Directory.Exists( models ) && Directory.Exists( materials );
+	}
+
+	private static DirectoryInfo? GetSearchStartDirectory( string referencePath )
+	{
+		if ( string.IsNullOrWhiteSpace( referencePath ) )
+		{
+			return null;
+		}
+
+		string normalized = Path.GetFullPath( referencePath );
+		if ( Directory.Exists( normalized ) )
+		{
+			return new DirectoryInfo( normalized );
+		}
+
+		string? directory = Path.GetDirectoryName( normalized );
+		if ( string.IsNullOrWhiteSpace( directory ) )
+		{
+			return null;
+		}
+
+		return new DirectoryInfo( directory );
 	}
 
 	private static string ResolveVtxPath( string modelDir, string baseName )
