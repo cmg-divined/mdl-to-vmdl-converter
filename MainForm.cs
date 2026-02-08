@@ -2,6 +2,36 @@ using System.Windows.Forms;
 
 internal sealed class MainForm : Form
 {
+	private const int DwmwaUseImmersiveDarkMode = 20;
+	private const int DwmwaUseImmersiveDarkModeLegacy = 19;
+	private const uint SwpNosize = 0x0001;
+	private const uint SwpNomove = 0x0002;
+	private const uint SwpNozorder = 0x0004;
+	private const uint SwpNoownerzorder = 0x0200;
+	private const uint SwpNoactivate = 0x0010;
+	private const uint SwpFramechanged = 0x0020;
+
+	private static readonly Color WindowBackColor = Color.FromArgb( 27, 30, 34 );
+	private static readonly Color PanelBackColor = Color.FromArgb( 33, 37, 42 );
+	private static readonly Color InputBackColor = Color.FromArgb( 24, 27, 31 );
+	private static readonly Color LogBackColor = Color.FromArgb( 20, 23, 27 );
+	private static readonly Color ButtonBackColor = Color.FromArgb( 45, 50, 56 );
+	private static readonly Color ButtonHoverBackColor = Color.FromArgb( 58, 64, 71 );
+	private static readonly Color ButtonDownBackColor = Color.FromArgb( 66, 73, 81 );
+	private static readonly Color BorderColor = Color.FromArgb( 72, 79, 88 );
+	private static readonly Color TextColor = Color.FromArgb( 233, 236, 240 );
+	private static readonly Color MutedTextColor = Color.FromArgb( 166, 174, 186 );
+	private static readonly Color LightWindowBackColor = Color.FromArgb( 245, 247, 250 );
+	private static readonly Color LightPanelBackColor = Color.FromArgb( 251, 252, 254 );
+	private static readonly Color LightInputBackColor = Color.White;
+	private static readonly Color LightLogBackColor = Color.White;
+	private static readonly Color LightButtonBackColor = Color.FromArgb( 233, 236, 240 );
+	private static readonly Color LightButtonHoverBackColor = Color.FromArgb( 223, 228, 234 );
+	private static readonly Color LightButtonDownBackColor = Color.FromArgb( 213, 219, 226 );
+	private static readonly Color LightBorderColor = Color.FromArgb( 180, 188, 200 );
+	private static readonly Color LightTextColor = Color.FromArgb( 25, 28, 32 );
+	private static readonly Color LightMutedTextColor = Color.FromArgb( 95, 105, 118 );
+
 	private readonly TextBox _mdlPathTextBox = new();
 	private readonly TextBox _batchRootTextBox = new();
 	private readonly TextBox _gmodRootTextBox = new();
@@ -32,7 +62,9 @@ internal sealed class MainForm : Form
 	private readonly Label _metalSourcePreviewLabel = new();
 	private readonly CheckBox _verboseCheckBox = new();
 	private readonly Button _convertButton = new();
-	private readonly TextBox _logTextBox = new();
+	private readonly Button _themeToggleButton = new();
+	private readonly RichTextBox _logTextBox = new();
+	private bool _isDarkTheme = true;
 
 	public MainForm()
 	{
@@ -43,6 +75,7 @@ internal sealed class MainForm : Form
 		Height = 760;
 
 		BuildUi();
+		Shown += (_, _) => ApplyNativeTheme();
 	}
 
 	private void BuildUi()
@@ -395,8 +428,30 @@ internal sealed class MainForm : Form
 		_convertButton.Height = 32;
 		_convertButton.Margin = new Padding( 0, 10, 0, 0 );
 		_convertButton.Click += async ( _, _ ) => await ConvertAsync();
-		conversionPanel.Controls.Add( _convertButton, 0, 7 );
-		conversionPanel.SetColumnSpan( _convertButton, 2 );
+
+		_themeToggleButton.AutoSize = false;
+		_themeToggleButton.Width = 140;
+		_themeToggleButton.Height = 32;
+		_themeToggleButton.Margin = new Padding( 8, 10, 0, 0 );
+		_themeToggleButton.Click += (_, _) =>
+		{
+			_isDarkTheme = !_isDarkTheme;
+			ApplyCurrentTheme();
+		};
+		UpdateThemeToggleButtonText();
+
+		var actionButtonsPanel = new FlowLayoutPanel
+		{
+			FlowDirection = FlowDirection.LeftToRight,
+			WrapContents = false,
+			AutoSize = true,
+			Margin = new Padding( 0, 0, 0, 0 )
+		};
+		actionButtonsPanel.Controls.Add( _convertButton );
+		actionButtonsPanel.Controls.Add( _themeToggleButton );
+
+		conversionPanel.Controls.Add( actionButtonsPanel, 0, 7 );
+		conversionPanel.SetColumnSpan( actionButtonsPanel, 2 );
 
 		conversionGroup.Controls.Add( conversionPanel );
 		settingsPanel.Controls.Add( conversionGroup, 1, 0 );
@@ -411,15 +466,18 @@ internal sealed class MainForm : Form
 		};
 
 		_logTextBox.Multiline = true;
-		_logTextBox.ScrollBars = ScrollBars.Both;
+		_logTextBox.ScrollBars = RichTextBoxScrollBars.Both;
 		_logTextBox.WordWrap = false;
 		_logTextBox.Font = new Font( "Consolas", 10f, FontStyle.Regular, GraphicsUnit.Point );
 		_logTextBox.Dock = DockStyle.Fill;
+		_logTextBox.ReadOnly = true;
 		logGroup.Controls.Add( _logTextBox );
 		root.Controls.Add( logGroup, 0, 2 );
 
 		string defaultOut = Path.Combine( Directory.GetCurrentDirectory(), "converted_output" );
 		_outputRootTextBox.Text = defaultOut;
+
+		ApplyCurrentTheme();
 	}
 
 	private static void AddPathRow( TableLayoutPanel panel, int row, string label, TextBox targetTextBox, EventHandler onBrowse )
@@ -868,4 +926,207 @@ internal sealed class MainForm : Form
 
 		_logTextBox.AppendText( message + Environment.NewLine );
 	}
+
+	private Color ActiveWindowBackColor => _isDarkTheme ? WindowBackColor : LightWindowBackColor;
+	private Color ActivePanelBackColor => _isDarkTheme ? PanelBackColor : LightPanelBackColor;
+	private Color ActiveInputBackColor => _isDarkTheme ? InputBackColor : LightInputBackColor;
+	private Color ActiveLogBackColor => _isDarkTheme ? LogBackColor : LightLogBackColor;
+	private Color ActiveButtonBackColor => _isDarkTheme ? ButtonBackColor : LightButtonBackColor;
+	private Color ActiveButtonHoverBackColor => _isDarkTheme ? ButtonHoverBackColor : LightButtonHoverBackColor;
+	private Color ActiveButtonDownBackColor => _isDarkTheme ? ButtonDownBackColor : LightButtonDownBackColor;
+	private Color ActiveBorderColor => _isDarkTheme ? BorderColor : LightBorderColor;
+	private Color ActiveTextColor => _isDarkTheme ? TextColor : LightTextColor;
+	private Color ActiveMutedTextColor => _isDarkTheme ? MutedTextColor : LightMutedTextColor;
+
+	private void ApplyCurrentTheme()
+	{
+		BackColor = ActiveWindowBackColor;
+		ForeColor = ActiveTextColor;
+		ApplyDarkThemeRecursive( this );
+		UpdateThemeToggleButtonText();
+		ApplyNativeTheme();
+		Invalidate( true );
+		Update();
+	}
+
+	private void ApplyDarkThemeRecursive( Control control )
+	{
+		switch ( control )
+		{
+			case Form:
+				control.BackColor = ActiveWindowBackColor;
+				control.ForeColor = ActiveTextColor;
+				break;
+			case GroupBox:
+				control.BackColor = ActivePanelBackColor;
+				control.ForeColor = ActiveTextColor;
+				break;
+			case TableLayoutPanel:
+			case FlowLayoutPanel:
+			case Panel:
+				control.BackColor = IsInsideGroupBox( control ) ? ActivePanelBackColor : ActiveWindowBackColor;
+				control.ForeColor = ActiveTextColor;
+				break;
+			case Label label:
+				label.ForeColor = (ReferenceEquals( label, _roughSourcePreviewLabel ) || ReferenceEquals( label, _metalSourcePreviewLabel ))
+					? ActiveMutedTextColor
+					: ActiveTextColor;
+				label.BackColor = label.Parent?.BackColor ?? Color.Transparent;
+				break;
+			case TextBox textBox:
+				textBox.BorderStyle = BorderStyle.FixedSingle;
+				textBox.BackColor = ReferenceEquals( textBox, _logTextBox ) ? ActiveLogBackColor : ActiveInputBackColor;
+				textBox.ForeColor = ActiveTextColor;
+				break;
+			case RichTextBox richTextBox:
+				richTextBox.BorderStyle = BorderStyle.FixedSingle;
+				richTextBox.BackColor = ActiveLogBackColor;
+				richTextBox.ForeColor = ActiveTextColor;
+				break;
+			case ComboBox comboBox:
+				comboBox.FlatStyle = FlatStyle.Flat;
+				comboBox.BackColor = ActiveInputBackColor;
+				comboBox.ForeColor = ActiveTextColor;
+				break;
+			case NumericUpDown numericUpDown:
+				numericUpDown.BorderStyle = BorderStyle.FixedSingle;
+				numericUpDown.BackColor = ActiveInputBackColor;
+				numericUpDown.ForeColor = ActiveTextColor;
+				break;
+			case CheckBox checkBox:
+				checkBox.ForeColor = ActiveTextColor;
+				if ( checkBox.Appearance == Appearance.Button )
+				{
+					checkBox.FlatStyle = FlatStyle.Flat;
+					checkBox.BackColor = ActiveButtonBackColor;
+					checkBox.FlatAppearance.BorderColor = ActiveBorderColor;
+					checkBox.FlatAppearance.CheckedBackColor = ActiveButtonHoverBackColor;
+					checkBox.FlatAppearance.MouseOverBackColor = ActiveButtonHoverBackColor;
+					checkBox.FlatAppearance.MouseDownBackColor = ActiveButtonDownBackColor;
+				}
+				break;
+			case Button button:
+				button.FlatStyle = FlatStyle.Flat;
+				button.BackColor = ActiveButtonBackColor;
+				button.ForeColor = ActiveTextColor;
+				button.FlatAppearance.BorderColor = ActiveBorderColor;
+				button.FlatAppearance.MouseOverBackColor = ActiveButtonHoverBackColor;
+				button.FlatAppearance.MouseDownBackColor = ActiveButtonDownBackColor;
+				break;
+			default:
+				control.ForeColor = ActiveTextColor;
+				break;
+		}
+
+		foreach ( Control child in control.Controls )
+		{
+			ApplyDarkThemeRecursive( child );
+		}
+	}
+
+	private static bool IsInsideGroupBox( Control control )
+	{
+		Control? current = control.Parent;
+		while ( current is not null )
+		{
+			if ( current is GroupBox )
+			{
+				return true;
+			}
+
+			current = current.Parent;
+		}
+
+		return false;
+	}
+
+	private void UpdateThemeToggleButtonText()
+	{
+		_themeToggleButton.Text = _isDarkTheme ? "Light Theme" : "Dark Theme";
+	}
+
+	private void ApplyNativeTheme()
+	{
+		TrySetTitleBarTheme( _isDarkTheme );
+		TryApplyThemeClass( _logTextBox, _isDarkTheme ? "DarkMode_Explorer" : "Explorer" );
+	}
+
+	private void TrySetTitleBarTheme( bool dark )
+	{
+		if ( !IsHandleCreated )
+		{
+			return;
+		}
+
+		int enabled = dark ? 1 : 0;
+		try
+		{
+			int hr = DwmSetWindowAttribute( Handle, DwmwaUseImmersiveDarkMode, ref enabled, sizeof( int ) );
+			if ( hr != 0 )
+			{
+				_ = DwmSetWindowAttribute( Handle, DwmwaUseImmersiveDarkModeLegacy, ref enabled, sizeof( int ) );
+			}
+
+			_ = SetWindowPos(
+				Handle,
+				IntPtr.Zero,
+				0,
+				0,
+				0,
+				0,
+				SwpNomove | SwpNosize | SwpNozorder | SwpNoownerzorder | SwpNoactivate | SwpFramechanged
+			);
+		}
+		catch ( DllNotFoundException )
+		{
+			// Ignore where DWM API is unavailable.
+		}
+		catch ( EntryPointNotFoundException )
+		{
+			// Ignore on older Windows builds.
+		}
+	}
+
+	private static void TryApplyThemeClass( Control control, string className )
+	{
+		if ( !control.IsHandleCreated )
+		{
+			control.CreateControl();
+		}
+
+		if ( !control.IsHandleCreated )
+		{
+			return;
+		}
+
+		try
+		{
+			_ = SetWindowTheme( control.Handle, className, null );
+		}
+		catch ( DllNotFoundException )
+		{
+			// Ignore where UXTheme API is unavailable.
+		}
+		catch ( EntryPointNotFoundException )
+		{
+			// Ignore where UXTheme API is unavailable.
+		}
+	}
+
+	[DllImport( "dwmapi.dll" )]
+	private static extern int DwmSetWindowAttribute( IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute );
+
+	[DllImport( "uxtheme.dll", CharSet = CharSet.Unicode )]
+	private static extern int SetWindowTheme( IntPtr hWnd, string? pszSubAppName, string? pszSubIdList );
+
+	[DllImport( "user32.dll", SetLastError = true )]
+	private static extern bool SetWindowPos(
+		IntPtr hWnd,
+		IntPtr hWndInsertAfter,
+		int x,
+		int y,
+		int cx,
+		int cy,
+		uint uFlags
+	);
 }
