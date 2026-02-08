@@ -10,8 +10,10 @@ Working in day-to-day imports:
 - Mesh extraction from MDL/VVD/VTX
 - Bone hierarchy + skin weights
 - Bodygroups
+- Skin-family (`$texturegroup`) to MaterialGroup export
 - Hitbox sets
 - Physics shape/body/joint export
+- Sequence animation export (`.smd`) + `AnimationList` in `.vmdl`
 - VMT/VTF to VMAT/TGA conversion
 - Eye materials mapped to Source 2 `shaders/eyeball.shader`
 - Flex/morph channel export (meshes with morphs are written as `.dmx`)
@@ -30,6 +32,7 @@ Output:
 - `.vmdl`
 - `.smd` meshes when no morph data is present
 - `.dmx` meshes when morph data is present
+- optional `.smd` animation clips + `AnimationList` entries in `.vmdl`
 - optional material package (`.vmat` + `.tga`)
 
 ## GUI Usage
@@ -116,12 +119,14 @@ Other useful flags:
 - `--batch <dir>` convert all `.mdl` files under a folder
 - `--recursive` / `--no-recursive` folder traversal behavior in batch mode
 - `--threads <n>` parallel worker count in batch mode
+- `--animations` / `--no-animations` export sequence clips
 - `--copy-shaders` / `--no-copy-shaders`
 - `--shader-src <dir>` explicit shader source override
 
 ## Material Notes
 
 The converter writes `MaterialGroupList` remaps from original material references to generated VMATs.
+When MDL skin families are present, additional non-default material groups are generated to mirror Source skin selection.
 
 Material source lookup order:
 1. MDL texture directories
@@ -144,11 +149,11 @@ Eye material behavior:
 
 ## Known Limitations
 
-- Animation/sequence conversion is not implemented.
 - Attachments / IK / pose parameters are not emitted.
 - Physics fitting is intentionally conservative (box/sphere fallback strategy).
 - Joint orientation is still basic (`anchor_angles` neutral).
 - Complex QC-driven facial controller behavior is not fully replicated yet.
+- Animation export currently uses direct local sequence/anim data and chooses the primary blend entry; complex pose-parameter blend behavior can still differ from StudioMDL.
 
 ## Build
 
