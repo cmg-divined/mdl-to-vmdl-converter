@@ -4,15 +4,20 @@ Direct Source 1 (`.mdl`) to s&box ModelDoc (`.vmdl`) converter.
 
 No FBX/OBJ step.
 
-## Status
+## Current Status
 
-Working for production model imports with:
-- mesh + skin weights
-- skeleton + bodygroups
-- hitboxes
-- physics bodies + joints
+Working in day-to-day imports:
+- Mesh extraction from MDL/VVD/VTX
+- Bone hierarchy + skin weights
+- Bodygroups
+- Hitbox sets
+- Physics shape/body/joint export
 - VMT/VTF to VMAT/TGA conversion
-- model-relative output path preservation (`models/...`)
+- Eye materials mapped to Source 2 `shaders/eyeball.shader`
+- Flex/morph channel export (meshes with morphs are written as `.dmx`)
+- Model-relative output path preservation (`models/...`)
+- Batch conversion with recursion + multithreaded workers
+- Auto GMod root detection from input path
 
 ## Input / Output
 
@@ -23,28 +28,9 @@ Input:
 
 Output:
 - `.vmdl`
-- one `.smd` per mesh/bodygroup choice
+- `.smd` meshes when no morph data is present
+- `.dmx` meshes when morph data is present
 - optional material package (`.vmat` + `.tga`)
-
-## What Works
-
-- Mesh extraction from MDL/VVD/VTX
-- Bone hierarchy + skin weights
-- Bodygroups
-- Hitbox sets
-- Physics shape list
-- Physics body markup list
-- Physics joints
-- Bone/body name canonicalization for ModelDoc (`ValveBiped.*` -> `bip01_*` naming)
-- Material conversion pipeline:
-  - VMT parsing
-  - VTF decoding
-  - profile detection (`Source`, `ExoPBR`, `GPBR`, `MWB`, `BFT`, `MadIvan18`, eyes)
-  - VMAT generation + `MaterialGroupList` remaps in VMDL
-- Correct VMAT texture slots:
-  - PBR: `Color`, `Normal`, `Roughness`, `Metalness`, `AmbientOcclusion`
-  - Eyes: `Iris`, `Cornea`
-- SMD file references in VMDL are written with model-relative paths (`models/...`) so ModelDoc resolves them correctly
 
 ## GUI Usage
 
@@ -62,7 +48,7 @@ Batch:
 2. Set `Batch Root` to a folder that contains `.mdl` files.
 3. GMod root is auto-detected from that path when possible (`.../garrysmod`).
 4. Keep `Recursive` enabled to include subfolders.
-5. Set `Threads` to control parallel conversion workers.
+5. Set `Threads` for parallel workers.
 6. Click `Convert`.
 
 Example input:
@@ -74,8 +60,13 @@ With preserve-path enabled, model output lands at:
 Materials are written under:
 `<outputRoot>\materials\...`
 
-Custom shaders from `gmod_mount/assets/shaders` are copied to:
+Custom shaders are copied to:
 `<outputRoot>\shaders`
+
+Shader copy source resolution order:
+1. `--shader-src <dir>` if provided
+2. nearest `shaders` folder in/above current tool location (including `MdlToVmdlConverter/shaders`)
+3. fallback `gmod_mount/assets/shaders` if found
 
 ## CLI Usage
 
@@ -125,24 +116,39 @@ Other useful flags:
 - `--batch <dir>` convert all `.mdl` files under a folder
 - `--recursive` / `--no-recursive` folder traversal behavior in batch mode
 - `--threads <n>` parallel worker count in batch mode
+- `--copy-shaders` / `--no-copy-shaders`
+- `--shader-src <dir>` explicit shader source override
 
 ## Material Notes
 
-The converter writes `MaterialGroupList` remaps from original SMD material names to generated VMATs.
+The converter writes `MaterialGroupList` remaps from original material references to generated VMATs.
 
 Material source lookup order:
 1. MDL texture directories
 2. model-relative fallback path
 3. raw material token fallback
 
-If a VMT/VTF cannot be resolved, a fallback PBR VMAT is generated so model import still completes.
+If a VMT/VTF cannot be resolved, a fallback PBR VMAT is generated so import still completes.
+
+Eye material behavior:
+- writes Source 2 `shaders/eyeball.shader`
+- maps `TextureColor` + `TextureIrisMask` from iris texture
+- maps `IrisNormal` from cornea texture
+- sets occlusion to neutral defaults to avoid black-eye artifacts in converted assets
+
+## Morph Notes
+
+- Flexes are exported from MDL mesh anim blocks into DMX morph channels.
+- Channel display names are normalized for ModelDoc readability.
+- This does not execute full Source QC flexcontroller expression logic (`localvar`/`%` rules), so some advanced controller behavior can still differ from StudioMDL.
 
 ## Known Limitations
 
-- Animation/sequence conversion is not implemented yet.
-- Attachments / IK / pose parameters are not emitted yet.
-- Physics fitting is still conservative (box/sphere fallback strategy).
-- Joint orientation is still basic (`anchor_angles` kept neutral).
+- Animation/sequence conversion is not implemented.
+- Attachments / IK / pose parameters are not emitted.
+- Physics fitting is intentionally conservative (box/sphere fallback strategy).
+- Joint orientation is still basic (`anchor_angles` neutral).
+- Complex QC-driven facial controller behavior is not fully replicated yet.
 
 ## Build
 
