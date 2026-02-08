@@ -17,8 +17,10 @@ internal sealed class MainForm : Form
 	private readonly CheckBox _copyShadersCheckBox = new();
 	private readonly ComboBox _roughSourceComboBox = new();
 	private readonly ComboBox _roughChannelComboBox = new();
+	private readonly CheckBox _roughInvertCheckBox = new();
 	private readonly ComboBox _metalSourceComboBox = new();
 	private readonly ComboBox _metalChannelComboBox = new();
+	private readonly CheckBox _metalInvertCheckBox = new();
 	private readonly CheckBox _overrideLevelsCheckBox = new();
 	private readonly NumericUpDown _levelsInMinUpDown = new();
 	private readonly NumericUpDown _levelsInMaxUpDown = new();
@@ -165,6 +167,11 @@ internal sealed class MainForm : Form
 		_roughChannelComboBox.Margin = new Padding( 0, 4, 0, 4 );
 		materialPanel.Controls.Add( _roughChannelComboBox, 3, 1 );
 
+		_roughInvertCheckBox.Text = "Invert";
+		_roughInvertCheckBox.AutoSize = true;
+		_roughInvertCheckBox.Margin = new Padding( 8, 6, 0, 0 );
+		materialPanel.Controls.Add( _roughInvertCheckBox, 4, 1 );
+
 		_roughSourcePreviewLabel.AutoSize = true;
 		_roughSourcePreviewLabel.ForeColor = Color.DimGray;
 		_roughSourcePreviewLabel.Margin = new Padding( 0, 0, 0, 6 );
@@ -196,6 +203,11 @@ internal sealed class MainForm : Form
 		_metalChannelComboBox.SelectedItem = MaterialOverrideChannel.Alpha.ToString();
 		_metalChannelComboBox.Margin = new Padding( 0, 4, 0, 4 );
 		materialPanel.Controls.Add( _metalChannelComboBox, 3, 3 );
+
+		_metalInvertCheckBox.Text = "Invert";
+		_metalInvertCheckBox.AutoSize = true;
+		_metalInvertCheckBox.Margin = new Padding( 8, 6, 0, 0 );
+		materialPanel.Controls.Add( _metalInvertCheckBox, 4, 3 );
 
 		_metalSourcePreviewLabel.AutoSize = true;
 		_metalSourcePreviewLabel.ForeColor = Color.DimGray;
@@ -278,8 +290,10 @@ internal sealed class MainForm : Form
 		_profileComboBox.SelectedIndexChanged += (_, _) => UpdateMaterialSourcePreview();
 		_roughSourceComboBox.SelectedIndexChanged += (_, _) => UpdateMaterialSourcePreview();
 		_roughChannelComboBox.SelectedIndexChanged += (_, _) => UpdateMaterialSourcePreview();
+		_roughInvertCheckBox.CheckedChanged += (_, _) => UpdateMaterialSourcePreview();
 		_metalSourceComboBox.SelectedIndexChanged += (_, _) => UpdateMaterialSourcePreview();
 		_metalChannelComboBox.SelectedIndexChanged += (_, _) => UpdateMaterialSourcePreview();
+		_metalInvertCheckBox.CheckedChanged += (_, _) => UpdateMaterialSourcePreview();
 
 		UpdateProfileOverrideUi();
 		UpdateMaterialSourcePreview();
@@ -487,6 +501,7 @@ internal sealed class MainForm : Form
 		{
 			roughChannel = parsedRoughChannel;
 		}
+		bool roughInvert = _roughInvertCheckBox.Checked;
 
 		MaterialOverrideTextureSource metalSource = MaterialOverrideTextureSource.Auto;
 		if ( _metalSourceComboBox.SelectedItem is string metalSourceText
@@ -501,19 +516,22 @@ internal sealed class MainForm : Form
 		{
 			metalChannel = parsedMetalChannel;
 		}
+		bool metalInvert = _metalInvertCheckBox.Checked;
 
 		_roughSourcePreviewLabel.Text = "Source: " + BuildMapSourcePreview(
 			isRoughness: true,
 			selectedProfile,
 			roughSource,
-			roughChannel
+			roughChannel,
+			roughInvert
 		);
 
 		_metalSourcePreviewLabel.Text = "Source: " + BuildMapSourcePreview(
 			isRoughness: false,
 			selectedProfile,
 			metalSource,
-			metalChannel
+			metalChannel,
+			metalInvert
 		);
 	}
 
@@ -521,11 +539,12 @@ internal sealed class MainForm : Form
 		bool isRoughness,
 		MaterialProfileOverride selectedProfile,
 		MaterialOverrideTextureSource overrideSource,
-		MaterialOverrideChannel overrideChannel )
+		MaterialOverrideChannel overrideChannel,
+		bool invert )
 	{
 		if ( overrideSource != MaterialOverrideTextureSource.Auto )
 		{
-			return $"Manual override -> {overrideSource} ({overrideChannel})";
+			return $"Manual override -> {overrideSource} ({overrideChannel}{(invert ? ", inverted" : string.Empty)})";
 		}
 
 		if ( _profileOverrideCheckBox.Checked )
@@ -700,6 +719,7 @@ internal sealed class MainForm : Form
 		{
 			roughnessOverrideChannel = parsedRoughChannel;
 		}
+		bool roughnessOverrideInvert = _roughInvertCheckBox.Checked;
 
 		MaterialOverrideTextureSource metalnessOverrideSource = MaterialOverrideTextureSource.Auto;
 		if ( _metalSourceComboBox.SelectedItem is string metalSourceSelected
@@ -714,6 +734,7 @@ internal sealed class MainForm : Form
 		{
 			metalnessOverrideChannel = parsedMetalChannel;
 		}
+		bool metalnessOverrideInvert = _metalInvertCheckBox.Checked;
 
 		if ( _levelsInMinUpDown.Value > _levelsInMaxUpDown.Value )
 		{
@@ -747,8 +768,10 @@ internal sealed class MainForm : Form
 			MaterialProfileOverride = profileOverride,
 			RoughnessOverrideSource = roughnessOverrideSource,
 			RoughnessOverrideChannel = roughnessOverrideChannel,
+			RoughnessOverrideInvert = roughnessOverrideInvert,
 			MetalnessOverrideSource = metalnessOverrideSource,
 			MetalnessOverrideChannel = metalnessOverrideChannel,
+			MetalnessOverrideInvert = metalnessOverrideInvert,
 			MaterialOverrideLevelsEnabled = _overrideLevelsCheckBox.Checked,
 			MaterialOverrideInputMin = (float)_levelsInMinUpDown.Value,
 			MaterialOverrideInputMax = (float)_levelsInMaxUpDown.Value,

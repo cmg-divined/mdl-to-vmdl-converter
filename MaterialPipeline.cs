@@ -305,6 +305,7 @@ internal static class MaterialPipeline
 			"roughness",
 			options.RoughnessOverrideSource,
 			options.RoughnessOverrideChannel,
+			options.RoughnessOverrideInvert,
 			materialsRoot,
 			props,
 			ref roughness,
@@ -324,6 +325,7 @@ internal static class MaterialPipeline
 			"metalness",
 			options.MetalnessOverrideSource,
 			options.MetalnessOverrideChannel,
+			options.MetalnessOverrideInvert,
 			materialsRoot,
 			props,
 			ref metalness,
@@ -585,6 +587,7 @@ internal static class MaterialPipeline
 		string mapName,
 		MaterialOverrideTextureSource source,
 		MaterialOverrideChannel channel,
+		bool invert,
 		string materialsRoot,
 		ExtractedPbrProperties props,
 		ref RgbaImage mapImage,
@@ -623,7 +626,7 @@ internal static class MaterialPipeline
 			return;
 		}
 
-		mapImage = ExtractChannelToGrayscale( sourceImage, channel, curves );
+		mapImage = ExtractChannelToGrayscale( sourceImage, channel, invert, curves );
 	}
 
 	private static RgbaImage? ResolveOverrideSourceTexture(
@@ -652,7 +655,7 @@ internal static class MaterialPipeline
 		};
 	}
 
-	private static RgbaImage ExtractChannelToGrayscale( RgbaImage source, MaterialOverrideChannel channel, MaterialOverrideCurveSettings curves )
+	private static RgbaImage ExtractChannelToGrayscale( RgbaImage source, MaterialOverrideChannel channel, bool invert, MaterialOverrideCurveSettings curves )
 	{
 		var output = new byte[source.Width * source.Height * 4];
 		int channelIndex = channel switch
@@ -669,6 +672,10 @@ internal static class MaterialPipeline
 		{
 			byte value = source.Pixels[i * 4 + channelIndex];
 			float normalized = value / 255f;
+			if ( invert )
+			{
+				normalized = 1f - normalized;
+			}
 			if ( curves.Enabled )
 			{
 				normalized = ApplyLevelsCurve( normalized, curves );

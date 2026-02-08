@@ -145,8 +145,10 @@ internal sealed class ConverterOptions
 	public MaterialProfileOverride MaterialProfileOverride { get; init; } = MaterialProfileOverride.Auto;
 	public MaterialOverrideTextureSource RoughnessOverrideSource { get; init; } = MaterialOverrideTextureSource.Auto;
 	public MaterialOverrideChannel RoughnessOverrideChannel { get; init; } = MaterialOverrideChannel.Alpha;
+	public bool RoughnessOverrideInvert { get; init; }
 	public MaterialOverrideTextureSource MetalnessOverrideSource { get; init; } = MaterialOverrideTextureSource.Auto;
 	public MaterialOverrideChannel MetalnessOverrideChannel { get; init; } = MaterialOverrideChannel.Alpha;
+	public bool MetalnessOverrideInvert { get; init; }
 	public bool MaterialOverrideLevelsEnabled { get; init; }
 	public float MaterialOverrideInputMin { get; init; } = 0f;
 	public float MaterialOverrideInputMax { get; init; } = 1f;
@@ -180,8 +182,10 @@ internal sealed class ConverterOptions
 		MaterialProfileOverride profileOverride = MaterialProfileOverride.Auto;
 		MaterialOverrideTextureSource roughnessOverrideSource = MaterialOverrideTextureSource.Auto;
 		MaterialOverrideChannel roughnessOverrideChannel = MaterialOverrideChannel.Alpha;
+		bool roughnessOverrideInvert = false;
 		MaterialOverrideTextureSource metalnessOverrideSource = MaterialOverrideTextureSource.Auto;
 		MaterialOverrideChannel metalnessOverrideChannel = MaterialOverrideChannel.Alpha;
+		bool metalnessOverrideInvert = false;
 		bool materialOverrideLevelsEnabled = false;
 		float materialOverrideInputMin = 0f;
 		float materialOverrideInputMax = 1f;
@@ -261,6 +265,30 @@ internal sealed class ConverterOptions
 			if ( string.Equals( arg, "--no-override-levels", StringComparison.OrdinalIgnoreCase ) )
 			{
 				materialOverrideLevelsEnabled = false;
+				continue;
+			}
+
+			if ( string.Equals( arg, "--rough-invert", StringComparison.OrdinalIgnoreCase ) )
+			{
+				roughnessOverrideInvert = true;
+				continue;
+			}
+
+			if ( string.Equals( arg, "--no-rough-invert", StringComparison.OrdinalIgnoreCase ) )
+			{
+				roughnessOverrideInvert = false;
+				continue;
+			}
+
+			if ( string.Equals( arg, "--metal-invert", StringComparison.OrdinalIgnoreCase ) )
+			{
+				metalnessOverrideInvert = true;
+				continue;
+			}
+
+			if ( string.Equals( arg, "--no-metal-invert", StringComparison.OrdinalIgnoreCase ) )
+			{
+				metalnessOverrideInvert = false;
 				continue;
 			}
 
@@ -367,8 +395,10 @@ internal sealed class ConverterOptions
 			Verbose = verbose,
 			RoughnessOverrideSource = roughnessOverrideSource,
 			RoughnessOverrideChannel = roughnessOverrideChannel,
+			RoughnessOverrideInvert = roughnessOverrideInvert,
 			MetalnessOverrideSource = metalnessOverrideSource,
 			MetalnessOverrideChannel = metalnessOverrideChannel,
+			MetalnessOverrideInvert = metalnessOverrideInvert,
 			MaterialOverrideLevelsEnabled = materialOverrideLevelsEnabled,
 			MaterialOverrideInputMin = materialOverrideInputMin,
 			MaterialOverrideInputMax = materialOverrideInputMax,
@@ -491,10 +521,14 @@ internal sealed class ConverterOptions
 		Console.WriteLine( "  --copy-shaders         Copy custom gmod shaders to output root (default)" );
 		Console.WriteLine( "  --no-copy-shaders      Do not copy shaders" );
 		Console.WriteLine( "  --shader-src <dir>     Override shader source directory" );
-		Console.WriteLine( "  --rough-source <name>  auto|base|normal|arm|mrao|exponent|envmask|exonormal" );
+		Console.WriteLine( "  --rough-source <name>  auto|base|normal|arm|mrao|phongexponent|envmask|exonormal" );
 		Console.WriteLine( "  --rough-channel <c>    r|g|b|a (used when rough-source != auto)" );
-		Console.WriteLine( "  --metal-source <name>  auto|base|normal|arm|mrao|exponent|envmask|exonormal" );
+		Console.WriteLine( "  --rough-invert         Invert roughness override channel" );
+		Console.WriteLine( "  --no-rough-invert      Do not invert roughness override channel (default)" );
+		Console.WriteLine( "  --metal-source <name>  auto|base|normal|arm|mrao|phongexponent|envmask|exonormal" );
 		Console.WriteLine( "  --metal-channel <c>    r|g|b|a (used when metal-source != auto)" );
+		Console.WriteLine( "  --metal-invert         Invert metalness override channel" );
+		Console.WriteLine( "  --no-metal-invert      Do not invert metalness override channel (default)" );
 		Console.WriteLine( "  --override-levels      Enable override levels/curves remap" );
 		Console.WriteLine( "  --no-override-levels   Disable override levels/curves remap (default)" );
 		Console.WriteLine( "  --override-in-min <v>  Levels input min [0..1], default 0" );
