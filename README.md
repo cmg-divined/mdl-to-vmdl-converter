@@ -37,7 +37,7 @@ Output:
 Run without arguments to open the GUI.
 
 Single model:
-1. Pick your `.mdl`.
+1. Pick your `.mdl`. Make sure if you are extracting from an addon you extract the materials/models folders to GarrysMod\garrysmod\ or else this won't work.
 2. Pick GMod root (`...\GarrysMod\garrysmod`) or let auto-detect fill it.
 3. Pick output root.
 4. Keep `Preserve models/... output path` enabled.
