@@ -9,6 +9,7 @@ No FBX/OBJ step.
 Working in day-to-day imports:
 - Mesh extraction from MDL/VVD/VTX
 - Bone hierarchy + skin weights
+- Attachment export (`AttachmentList`)
 - Bodygroups
 - Skin-family (`$texturegroup`) to MaterialGroup export
 - Hitbox sets
@@ -149,7 +150,7 @@ Eye material behavior:
 
 ## Known Limitations
 
-- Attachments / IK / pose parameters are not emitted.
+- IK / pose parameters are not emitted.
 - Physics fitting is intentionally conservative (box/sphere fallback strategy).
 - Joint orientation is still basic (`anchor_angles` neutral).
 - Complex QC-driven facial controller behavior is not fully replicated yet.
