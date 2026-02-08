@@ -13,6 +13,7 @@ internal static class ConverterPipeline
 		context.ExportBoneNames = BoneNameUtil.BuildExportBoneNames( sourceModel.Mdl.Bones );
 
 		BuildRenderMeshesAndBodyGroups( context );
+		BuildAttachments( context );
 		BuildHitboxes( context );
 		BuildPhysics( context );
 		CollectSourceMaterials( context );
@@ -259,6 +260,41 @@ internal static class ConverterPipeline
 
 		List<MeshMorphExport> morphs = BuildModelMorphs( mdl, mdlModel, bodyPartVertexIndexStart, vertices );
 		return (triangles, morphs);
+	}
+
+	private static void BuildAttachments( BuildContext context )
+	{
+		List<MdlAttachment> attachments = context.SourceModel.Mdl.Attachments;
+		if ( attachments.Count == 0 )
+		{
+			return;
+		}
+
+		var usedNames = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+		foreach ( MdlAttachment attachment in attachments )
+		{
+			string baseName = NameUtil.CleanName( attachment.Name, $"attachment_{attachment.Index}" );
+			string name = MakeUniqueName( usedNames, baseName, attachment.Index );
+
+			string parentBone = GetExportBoneName( context, attachment.BoneIndex );
+			if ( string.IsNullOrWhiteSpace( parentBone ) )
+			{
+				parentBone = context.ExportBoneNames.Count > 0 ? context.ExportBoneNames[0] : "root";
+			}
+
+			Vector3 origin = ExtractAttachmentOrigin( attachment.Matrix );
+			Vector3 angles = ExtractAttachmentAnglesDegrees( attachment.Matrix );
+
+			context.Attachments.Add( new AttachmentExport
+			{
+				Name = name,
+				ParentBone = parentBone,
+				RelativeOrigin = origin,
+				RelativeAngles = angles,
+				Weight = 1f,
+				IgnoreRotation = false
+			} );
+		}
 	}
 
 	private static List<MeshMorphExport> BuildModelMorphs( MdlFile mdl, MdlModel mdlModel, int bodyPartVertexIndexStart, VvdVertex[] vertices )
@@ -794,6 +830,71 @@ internal static class ConverterPipeline
 		string trimmed = rawName.Trim();
 		string sanitized = BoneNameUtil.SanitizeBoneName( trimmed, fallback );
 		return BoneNameUtil.CanonicalizeForModelDoc( sanitized );
+	}
+
+	private static string MakeUniqueName( HashSet<string> usedNames, string baseName, int fallbackIndex )
+	{
+		string candidate = string.IsNullOrWhiteSpace( baseName ) ? $"attachment_{fallbackIndex}" : baseName;
+		if ( usedNames.Add( candidate ) )
+		{
+			return candidate;
+		}
+
+		for ( int i = 2; ; i++ )
+		{
+			string deduped = $"{candidate}_{i}";
+			if ( usedNames.Add( deduped ) )
+			{
+				return deduped;
+			}
+		}
+	}
+
+	private static Vector3 ExtractAttachmentOrigin( float[]? matrix3x4 )
+	{
+		if ( matrix3x4 is null || matrix3x4.Length < 12 )
+		{
+			return new Vector3( 0f, 0f, 0f );
+		}
+
+		return new Vector3( matrix3x4[3], matrix3x4[7], matrix3x4[11] );
+	}
+
+	private static Vector3 ExtractAttachmentAnglesDegrees( float[]? matrix3x4 )
+	{
+		if ( matrix3x4 is null || matrix3x4.Length < 12 )
+		{
+			return new Vector3( 0f, 0f, 0f );
+		}
+
+		float m00 = matrix3x4[0];
+		float m10 = matrix3x4[4];
+		float m20 = matrix3x4[8];
+		float m11 = matrix3x4[5];
+		float m12 = matrix3x4[6];
+		float m21 = matrix3x4[9];
+		float m22 = matrix3x4[10];
+
+		float sy = MathF.Sqrt( (m00 * m00) + (m10 * m10) );
+		float pitch;
+		float yaw;
+		float roll;
+
+		if ( sy > 1e-6f )
+		{
+			pitch = MathF.Atan2( m21, m22 );
+			yaw = MathF.Atan2( -m20, sy );
+			roll = MathF.Atan2( m10, m00 );
+		}
+		else
+		{
+			pitch = MathF.Atan2( -m12, m11 );
+			yaw = MathF.Atan2( -m20, sy );
+			roll = 0f;
+		}
+
+		const float RadToDeg = 57.29577951308232f;
+		return new Vector3( pitch * RadToDeg, yaw * RadToDeg, roll * RadToDeg );
 	}
 
 	private static string GetExportBoneName( BuildContext context, int boneIndex )

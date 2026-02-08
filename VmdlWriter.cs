@@ -19,6 +19,7 @@ internal static class VmdlWriter
 		WriteBodyGroupList( writer, context, 3 );
 		WriteMaterialGroupList( writer, context, 3 );
 		WriteAnimationList( writer, context, 3 );
+		WriteAttachmentList( writer, context, 3 );
 		WriteHitboxSetList( writer, context, 3 );
 		WritePhysicsShapeList( writer, context, 3 );
 		WritePhysicsBodyMarkupList( writer, context, 3 );
@@ -224,6 +225,33 @@ internal static class VmdlWriter
 				WriteLine( writer, indent + 4, "}," );
 			}
 			WriteLine( writer, indent + 3, "]" );
+			WriteLine( writer, indent + 2, "}," );
+		}
+		WriteLine( writer, indent + 1, "]" );
+		WriteLine( writer, indent, "}," );
+	}
+
+	private static void WriteAttachmentList( StreamWriter writer, BuildContext context, int indent )
+	{
+		if ( context.Attachments.Count == 0 )
+		{
+			return;
+		}
+
+		WriteLine( writer, indent, "{" );
+		WriteLine( writer, indent + 1, "_class = \"AttachmentList\"" );
+		WriteLine( writer, indent + 1, "children =" );
+		WriteLine( writer, indent + 1, "[" );
+		foreach ( AttachmentExport attachment in context.Attachments )
+		{
+			WriteLine( writer, indent + 2, "{" );
+			WriteLine( writer, indent + 3, "_class = \"Attachment\"" );
+			WriteLine( writer, indent + 3, $"name = \"{Escape( attachment.Name )}\"" );
+			WriteLine( writer, indent + 3, $"parent_bone = \"{Escape( attachment.ParentBone )}\"" );
+			WriteLine( writer, indent + 3, $"relative_origin = {FmtVec3( attachment.RelativeOrigin )}" );
+			WriteLine( writer, indent + 3, $"relative_angles = {FmtVec3( attachment.RelativeAngles )}" );
+			WriteLine( writer, indent + 3, $"weight = {Fmt( attachment.Weight )}" );
+			WriteLine( writer, indent + 3, $"ignore_rotation = {(attachment.IgnoreRotation ? "true" : "false")}" );
 			WriteLine( writer, indent + 2, "}," );
 		}
 		WriteLine( writer, indent + 1, "]" );

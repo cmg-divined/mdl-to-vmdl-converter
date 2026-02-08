@@ -12,6 +12,7 @@ internal sealed class BuildContext
 	public List<MaterialGroupExport> MaterialGroups { get; } = new();
 	public List<MeshExport> Meshes { get; } = new();
 	public List<BodyGroupExport> BodyGroups { get; } = new();
+	public List<AttachmentExport> Attachments { get; } = new();
 	public List<HitboxSetExport> HitboxSets { get; } = new();
 	public List<PhysicsShapeExport> PhysicsShapes { get; } = new();
 	public List<PhysicsBodyMarkupExport> PhysicsBodies { get; } = new();
@@ -81,6 +82,16 @@ internal sealed class MaterialGroupExport
 {
 	public required string Name { get; init; }
 	public required List<MaterialRemapExport> Remaps { get; init; }
+}
+
+internal sealed class AttachmentExport
+{
+	public required string Name { get; init; }
+	public required string ParentBone { get; init; }
+	public required Vector3 RelativeOrigin { get; init; }
+	public required Vector3 RelativeAngles { get; init; }
+	public float Weight { get; init; } = 1f;
+	public bool IgnoreRotation { get; init; }
 }
 
 internal sealed class HitboxSetExport
