@@ -1,4 +1,5 @@
 using System.Windows.Forms;
+using System.Globalization;
 
 internal static class Program
 {
@@ -104,6 +105,26 @@ internal enum MaterialProfileOverride
 	MadIvan18
 }
 
+internal enum MaterialOverrideTextureSource
+{
+	Auto,
+	BaseTexture,
+	NormalMap,
+	ArmTexture,
+	MraoTexture,
+	PhongExponentTexture,
+	EnvMaskTexture,
+	ExoNormalTexture
+}
+
+internal enum MaterialOverrideChannel
+{
+	Red,
+	Green,
+	Blue,
+	Alpha
+}
+
 internal sealed class ConverterOptions
 {
 	public string? MdlPath { get; init; }
@@ -122,6 +143,16 @@ internal sealed class ConverterOptions
 	public bool CopyShaders { get; init; } = true;
 	public bool Verbose { get; init; }
 	public MaterialProfileOverride MaterialProfileOverride { get; init; } = MaterialProfileOverride.Auto;
+	public MaterialOverrideTextureSource RoughnessOverrideSource { get; init; } = MaterialOverrideTextureSource.Auto;
+	public MaterialOverrideChannel RoughnessOverrideChannel { get; init; } = MaterialOverrideChannel.Alpha;
+	public MaterialOverrideTextureSource MetalnessOverrideSource { get; init; } = MaterialOverrideTextureSource.Auto;
+	public MaterialOverrideChannel MetalnessOverrideChannel { get; init; } = MaterialOverrideChannel.Alpha;
+	public bool MaterialOverrideLevelsEnabled { get; init; }
+	public float MaterialOverrideInputMin { get; init; } = 0f;
+	public float MaterialOverrideInputMax { get; init; } = 1f;
+	public float MaterialOverrideGamma { get; init; } = 1f;
+	public float MaterialOverrideOutputMin { get; init; } = 0f;
+	public float MaterialOverrideOutputMax { get; init; } = 1f;
 	public bool IsBatchMode => !string.IsNullOrWhiteSpace( BatchRootDirectory );
 
 	public static ConverterOptions Parse( string[] args )
@@ -147,6 +178,16 @@ internal sealed class ConverterOptions
 		bool verbose = false;
 		int maxParallelism = Math.Max( 1, Environment.ProcessorCount );
 		MaterialProfileOverride profileOverride = MaterialProfileOverride.Auto;
+		MaterialOverrideTextureSource roughnessOverrideSource = MaterialOverrideTextureSource.Auto;
+		MaterialOverrideChannel roughnessOverrideChannel = MaterialOverrideChannel.Alpha;
+		MaterialOverrideTextureSource metalnessOverrideSource = MaterialOverrideTextureSource.Auto;
+		MaterialOverrideChannel metalnessOverrideChannel = MaterialOverrideChannel.Alpha;
+		bool materialOverrideLevelsEnabled = false;
+		float materialOverrideInputMin = 0f;
+		float materialOverrideInputMax = 1f;
+		float materialOverrideGamma = 1f;
+		float materialOverrideOutputMin = 0f;
+		float materialOverrideOutputMax = 1f;
 
 		for ( int i = 0; i < args.Length; i++ )
 		{
@@ -211,6 +252,18 @@ internal sealed class ConverterOptions
 				continue;
 			}
 
+			if ( string.Equals( arg, "--override-levels", StringComparison.OrdinalIgnoreCase ) )
+			{
+				materialOverrideLevelsEnabled = true;
+				continue;
+			}
+
+			if ( string.Equals( arg, "--no-override-levels", StringComparison.OrdinalIgnoreCase ) )
+			{
+				materialOverrideLevelsEnabled = false;
+				continue;
+			}
+
 			if ( arg.StartsWith( "--", StringComparison.Ordinal ) )
 			{
 				if ( i + 1 >= args.Length )
@@ -238,6 +291,15 @@ internal sealed class ConverterOptions
 						}
 						break;
 					case "--profile": profileOverride = ParseProfileOverride( value ); break;
+					case "--rough-source": roughnessOverrideSource = ParseOverrideTextureSource( value ); break;
+					case "--rough-channel": roughnessOverrideChannel = ParseOverrideChannel( value ); break;
+					case "--metal-source": metalnessOverrideSource = ParseOverrideTextureSource( value ); break;
+					case "--metal-channel": metalnessOverrideChannel = ParseOverrideChannel( value ); break;
+					case "--override-in-min": materialOverrideInputMin = ParseUnitFloat( value, "--override-in-min" ); break;
+					case "--override-in-max": materialOverrideInputMax = ParseUnitFloat( value, "--override-in-max" ); break;
+					case "--override-gamma": materialOverrideGamma = ParsePositiveFloat( value, "--override-gamma" ); break;
+					case "--override-out-min": materialOverrideOutputMin = ParseUnitFloat( value, "--override-out-min" ); break;
+					case "--override-out-max": materialOverrideOutputMax = ParseUnitFloat( value, "--override-out-max" ); break;
 					default: throw new ArgumentException( $"Unknown option: {arg}" );
 				}
 			}
@@ -275,6 +337,16 @@ internal sealed class ConverterOptions
 			}
 		}
 
+		if ( materialOverrideInputMin > materialOverrideInputMax )
+		{
+			throw new ArgumentException( "--override-in-min cannot be greater than --override-in-max." );
+		}
+
+		if ( materialOverrideOutputMin > materialOverrideOutputMax )
+		{
+			throw new ArgumentException( "--override-out-min cannot be greater than --override-out-max." );
+		}
+
 		return new ConverterOptions
 		{
 			MdlPath = string.IsNullOrWhiteSpace( mdl ) ? null : Path.GetFullPath( mdl ),
@@ -292,7 +364,17 @@ internal sealed class ConverterOptions
 			ConvertMaterials = convertMaterials,
 			CopyShaders = copyShaders,
 			MaterialProfileOverride = profileOverride,
-			Verbose = verbose
+			Verbose = verbose,
+			RoughnessOverrideSource = roughnessOverrideSource,
+			RoughnessOverrideChannel = roughnessOverrideChannel,
+			MetalnessOverrideSource = metalnessOverrideSource,
+			MetalnessOverrideChannel = metalnessOverrideChannel,
+			MaterialOverrideLevelsEnabled = materialOverrideLevelsEnabled,
+			MaterialOverrideInputMin = materialOverrideInputMin,
+			MaterialOverrideInputMax = materialOverrideInputMax,
+			MaterialOverrideGamma = materialOverrideGamma,
+			MaterialOverrideOutputMin = materialOverrideOutputMin,
+			MaterialOverrideOutputMax = materialOverrideOutputMax
 		};
 	}
 
@@ -317,6 +399,76 @@ internal sealed class ConverterOptions
 		};
 	}
 
+	private static MaterialOverrideTextureSource ParseOverrideTextureSource( string raw )
+	{
+		if ( string.IsNullOrWhiteSpace( raw ) )
+		{
+			return MaterialOverrideTextureSource.Auto;
+		}
+
+		string normalized = raw.Trim().Replace( "-", string.Empty, StringComparison.Ordinal ).Replace( "_", string.Empty, StringComparison.Ordinal ).ToLowerInvariant();
+		return normalized switch
+		{
+			"auto" => MaterialOverrideTextureSource.Auto,
+			"base" or "basetexture" => MaterialOverrideTextureSource.BaseTexture,
+			"normal" or "normalmap" or "bump" or "bumpmap" => MaterialOverrideTextureSource.NormalMap,
+			"arm" or "armtexture" => MaterialOverrideTextureSource.ArmTexture,
+			"mrao" or "mraotexture" => MaterialOverrideTextureSource.MraoTexture,
+			"exponent" or "phongexponent" or "phongexponenttexture" => MaterialOverrideTextureSource.PhongExponentTexture,
+			"envmask" or "envmapmask" => MaterialOverrideTextureSource.EnvMaskTexture,
+			"exonormal" or "exonormaltexture" => MaterialOverrideTextureSource.ExoNormalTexture,
+			_ => throw new ArgumentException( $"Unknown override source: {raw}" )
+		};
+	}
+
+	private static MaterialOverrideChannel ParseOverrideChannel( string raw )
+	{
+		if ( string.IsNullOrWhiteSpace( raw ) )
+		{
+			return MaterialOverrideChannel.Alpha;
+		}
+
+		string normalized = raw.Trim().ToLowerInvariant();
+		return normalized switch
+		{
+			"r" or "red" => MaterialOverrideChannel.Red,
+			"g" or "green" => MaterialOverrideChannel.Green,
+			"b" or "blue" => MaterialOverrideChannel.Blue,
+			"a" or "alpha" => MaterialOverrideChannel.Alpha,
+			_ => throw new ArgumentException( $"Unknown override channel: {raw}" )
+		};
+	}
+
+	private static float ParseUnitFloat( string raw, string optionName )
+	{
+		if ( !float.TryParse( raw, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed ) )
+		{
+			throw new ArgumentException( $"Invalid value for {optionName}: {raw}" );
+		}
+
+		if ( parsed < 0f || parsed > 1f )
+		{
+			throw new ArgumentException( $"{optionName} must be in range [0,1]." );
+		}
+
+		return parsed;
+	}
+
+	private static float ParsePositiveFloat( string raw, string optionName )
+	{
+		if ( !float.TryParse( raw, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed ) )
+		{
+			throw new ArgumentException( $"Invalid value for {optionName}: {raw}" );
+		}
+
+		if ( parsed <= 0f )
+		{
+			throw new ArgumentException( $"{optionName} must be > 0." );
+		}
+
+		return parsed;
+	}
+
 	public static void PrintUsage()
 	{
 		Console.WriteLine( "MDL to VMDL converter" );
@@ -339,6 +491,17 @@ internal sealed class ConverterOptions
 		Console.WriteLine( "  --copy-shaders         Copy custom gmod shaders to output root (default)" );
 		Console.WriteLine( "  --no-copy-shaders      Do not copy shaders" );
 		Console.WriteLine( "  --shader-src <dir>     Override shader source directory" );
+		Console.WriteLine( "  --rough-source <name>  auto|base|normal|arm|mrao|exponent|envmask|exonormal" );
+		Console.WriteLine( "  --rough-channel <c>    r|g|b|a (used when rough-source != auto)" );
+		Console.WriteLine( "  --metal-source <name>  auto|base|normal|arm|mrao|exponent|envmask|exonormal" );
+		Console.WriteLine( "  --metal-channel <c>    r|g|b|a (used when metal-source != auto)" );
+		Console.WriteLine( "  --override-levels      Enable override levels/curves remap" );
+		Console.WriteLine( "  --no-override-levels   Disable override levels/curves remap (default)" );
+		Console.WriteLine( "  --override-in-min <v>  Levels input min [0..1], default 0" );
+		Console.WriteLine( "  --override-in-max <v>  Levels input max [0..1], default 1" );
+		Console.WriteLine( "  --override-gamma <v>   Levels gamma > 0, default 1" );
+		Console.WriteLine( "  --override-out-min <v> Levels output min [0..1], default 0" );
+		Console.WriteLine( "  --override-out-max <v> Levels output max [0..1], default 1" );
 		Console.WriteLine( "  --verbose              Verbose parser logging" );
 		Console.WriteLine( "  --gui                  Open GUI" );
 	}

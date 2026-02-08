@@ -59,7 +59,14 @@ internal sealed class ExtractedPbrProperties
 	public string IrisTexturePath { get; set; } = string.Empty;
 	public string CorneaTexturePath { get; set; } = string.Empty;
 	public string EyeAmbientOcclTexturePath { get; set; } = string.Empty;
+	public float[]? EyeAmbientOcclColor { get; set; }
+	public float EyeDilation { get; set; } = 0.5f;
+	public float EyeParallaxStrength { get; set; } = 0.25f;
+	public float EyeCorneaBumpStrength { get; set; } = 1f;
+	public float EyeEyeballRadius { get; set; } = 0.5f;
 	public float EyeGlossiness { get; set; } = 0.5f;
+	public bool EyeRaytraceSphere { get; set; } = true;
+	public bool EyeSphereTexKill { get; set; } = true;
 }
 
 internal static class PseudoPbrFormats
@@ -156,7 +163,18 @@ internal static class PseudoPbrFormats
 			props.IrisTexturePath = vmt.GetString( "$iris" );
 			props.CorneaTexturePath = vmt.GetString( "$corneatexture" );
 			props.EyeAmbientOcclTexturePath = vmt.GetString( "$ambientoccltexture" );
+			props.EyeDilation = vmt.GetFloat( "$dilation", 0.5f );
+			props.EyeParallaxStrength = vmt.GetFloat( "$parallaxstrength", 0.25f );
+			props.EyeCorneaBumpStrength = vmt.GetFloat( "$corneabumpstrength", 1f );
 			props.EyeGlossiness = vmt.GetFloat( "$glossiness", 0.5f );
+			props.EyeEyeballRadius = vmt.GetFloat( "$eyeballradius", 0.5f );
+			props.EyeRaytraceSphere = vmt.GetBool( "$raytracesphere", true );
+			props.EyeSphereTexKill = vmt.GetBool( "$spheretexkillcombo", true ) || vmt.GetBool( "$spheretexkill", false );
+
+			Vector3 aoColor = vmt.GetVector3( "$ambientocclcolor" );
+			props.EyeAmbientOcclColor = !IsDefaultVector( aoColor )
+				? [aoColor.x, aoColor.y, aoColor.z]
+				: [0.33f, 0.33f, 0.33f];
 		}
 
 		switch ( props.Format )

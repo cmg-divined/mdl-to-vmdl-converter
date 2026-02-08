@@ -103,7 +103,7 @@ internal static class MaterialPipeline
 				}
 				else
 				{
-					WritePbrMaterial( outputRoot, materialsRoot, sourceMaterialPath, props, result, fromReference );
+					WritePbrMaterial( outputRoot, materialsRoot, sourceMaterialPath, props, result, fromReference, options, warn );
 				}
 
 				result.ConvertedCount++;
@@ -128,11 +128,14 @@ internal static class MaterialPipeline
 		MaterialConversionResult result,
 		string fromReference )
 	{
-		RgbaImage iris = LoadTexture( materialsRoot, props.IrisTexturePath, forceOpaqueAlpha: true )
-			?? LoadTexture( materialsRoot, props.BaseTexturePath, forceOpaqueAlpha: true )
+		RgbaImage? irisRaw = LoadTexture( materialsRoot, props.IrisTexturePath, forceOpaqueAlpha: false )
+			?? LoadTexture( materialsRoot, props.BaseTexturePath, forceOpaqueAlpha: false )
 			?? CreateSolidColor( 1, 1, 255, 255, 255, 255 );
-		RgbaImage cornea = LoadTexture( materialsRoot, props.CorneaTexturePath, forceOpaqueAlpha: true )
+		RgbaImage iris = irisRaw;
+
+		RgbaImage? corneaRaw = LoadTexture( materialsRoot, props.CorneaTexturePath, forceOpaqueAlpha: false )
 			?? CreateSolidColor( 1, 1, 128, 128, 255, 255 );
+		RgbaImage cornea = corneaRaw;
 
 		string irisPath = WriteTextureVariant( outputRoot, sourceMaterialPath, "iris", iris );
 		string corneaPath = WriteTextureVariant( outputRoot, sourceMaterialPath, "cornea", cornea );
@@ -154,7 +157,9 @@ internal static class MaterialPipeline
 		string sourceMaterialPath,
 		ExtractedPbrProperties props,
 		MaterialConversionResult result,
-		string fromReference )
+		string fromReference,
+		ConverterOptions options,
+		Action<string> warn )
 	{
 		RgbaImage? baseRaw = LoadTexture( materialsRoot, props.BaseTexturePath, forceOpaqueAlpha: false );
 		bool keepColorAlpha = props.IsAlphaTest || props.IsTranslucent || props.IsAdditive;
@@ -166,6 +171,11 @@ internal static class MaterialPipeline
 		RgbaImage normal = bumpRaw is null
 			? CreateSolidColor( color.Width, color.Height, 128, 128, 255, 255 )
 			: CloneImageWithAlpha( bumpRaw, 255 );
+		RgbaImage? armRaw = null;
+		RgbaImage? mraoRaw = null;
+		RgbaImage? exponentRaw = null;
+		RgbaImage? envMaskRaw = null;
+		RgbaImage? exoNormalRaw = null;
 
 		byte defaultRough = (byte)Math.Clamp( props.Roughness * 255f, 0f, 255f );
 		byte defaultMetal = (byte)Math.Clamp( props.Metallic * 255f, 0f, 255f );
@@ -177,18 +187,18 @@ internal static class MaterialPipeline
 		{
 			case PbrFormat.ExoPBR:
 				{
-					RgbaImage? arm = LoadTexture( materialsRoot, props.ArmTexturePath, forceOpaqueAlpha: false );
-					if ( arm is not null )
+					armRaw = LoadTexture( materialsRoot, props.ArmTexturePath, forceOpaqueAlpha: false );
+					if ( armRaw is not null )
 					{
-						roughness = CreateFromRgba( PbrTextureGenerator.ExtractRoughnessFromArm( arm.Pixels, arm.Width, arm.Height ), arm.Width, arm.Height );
-						metalness = CreateFromRgba( PbrTextureGenerator.ExtractMetallicFromArm( arm.Pixels, arm.Width, arm.Height ), arm.Width, arm.Height );
-						ao = CreateFromRgba( PbrTextureGenerator.ExtractAoFromArm( arm.Pixels, arm.Width, arm.Height ), arm.Width, arm.Height );
+						roughness = CreateFromRgba( PbrTextureGenerator.ExtractRoughnessFromArm( armRaw.Pixels, armRaw.Width, armRaw.Height ), armRaw.Width, armRaw.Height );
+						metalness = CreateFromRgba( PbrTextureGenerator.ExtractMetallicFromArm( armRaw.Pixels, armRaw.Width, armRaw.Height ), armRaw.Width, armRaw.Height );
+						ao = CreateFromRgba( PbrTextureGenerator.ExtractAoFromArm( armRaw.Pixels, armRaw.Width, armRaw.Height ), armRaw.Width, armRaw.Height );
 					}
 
-					RgbaImage? exoNormal = LoadTexture( materialsRoot, props.ExoNormalPath, forceOpaqueAlpha: false );
-					if ( exoNormal is not null )
+					exoNormalRaw = LoadTexture( materialsRoot, props.ExoNormalPath, forceOpaqueAlpha: false );
+					if ( exoNormalRaw is not null )
 					{
-						normal = CreateFromRgba( PbrTextureGenerator.FlipNormalMapGreen( exoNormal.Pixels, exoNormal.Width, exoNormal.Height ), exoNormal.Width, exoNormal.Height );
+						normal = CreateFromRgba( PbrTextureGenerator.FlipNormalMapGreen( exoNormalRaw.Pixels, exoNormalRaw.Width, exoNormalRaw.Height ), exoNormalRaw.Width, exoNormalRaw.Height );
 						normal = CloneImageWithAlpha( normal, 255 );
 					}
 					break;
@@ -196,12 +206,12 @@ internal static class MaterialPipeline
 
 			case PbrFormat.GPBR:
 				{
-					RgbaImage? mrao = LoadTexture( materialsRoot, props.MraoTexturePath, forceOpaqueAlpha: false );
-					if ( mrao is not null )
+					mraoRaw = LoadTexture( materialsRoot, props.MraoTexturePath, forceOpaqueAlpha: false );
+					if ( mraoRaw is not null )
 					{
-						roughness = CreateFromRgba( PbrTextureGenerator.ExtractRoughnessFromMrao( mrao.Pixels, mrao.Width, mrao.Height ), mrao.Width, mrao.Height );
-						metalness = CreateFromRgba( PbrTextureGenerator.ExtractMetallicFromMrao( mrao.Pixels, mrao.Width, mrao.Height ), mrao.Width, mrao.Height );
-						ao = CreateFromRgba( PbrTextureGenerator.ExtractAoFromMrao( mrao.Pixels, mrao.Width, mrao.Height ), mrao.Width, mrao.Height );
+						roughness = CreateFromRgba( PbrTextureGenerator.ExtractRoughnessFromMrao( mraoRaw.Pixels, mraoRaw.Width, mraoRaw.Height ), mraoRaw.Width, mraoRaw.Height );
+						metalness = CreateFromRgba( PbrTextureGenerator.ExtractMetallicFromMrao( mraoRaw.Pixels, mraoRaw.Width, mraoRaw.Height ), mraoRaw.Width, mraoRaw.Height );
+						ao = CreateFromRgba( PbrTextureGenerator.ExtractAoFromMrao( mraoRaw.Pixels, mraoRaw.Width, mraoRaw.Height ), mraoRaw.Width, mraoRaw.Height );
 					}
 					break;
 				}
@@ -237,9 +247,10 @@ internal static class MaterialPipeline
 					}
 
 					RgbaImage? exponent = LoadTexture( materialsRoot, props.PhongExponentTexturePath, forceOpaqueAlpha: false );
-					if ( exponent is not null )
+					exponentRaw = exponent;
+					if ( exponentRaw is not null )
 					{
-						roughness = CreateFromRgba( PbrTextureGenerator.ConvertBftExponentToRoughness( exponent.Pixels, exponent.Width, exponent.Height ), exponent.Width, exponent.Height );
+						roughness = CreateFromRgba( PbrTextureGenerator.ConvertBftExponentToRoughness( exponentRaw.Pixels, exponentRaw.Width, exponentRaw.Height ), exponentRaw.Width, exponentRaw.Height );
 					}
 					break;
 				}
@@ -253,31 +264,80 @@ internal static class MaterialPipeline
 					}
 
 					RgbaImage? exponent = LoadTexture( materialsRoot, props.PhongExponentTexturePath, forceOpaqueAlpha: false );
-					if ( exponent is not null )
+					exponentRaw = exponent;
+					if ( exponentRaw is not null )
 					{
-						metalness = ExtractMetalnessFromRed( exponent );
+						metalness = ExtractMetalnessFromRed( exponentRaw );
 					}
 					break;
 				}
 
 			default:
 				{
-					RgbaImage? exponent = LoadTexture( materialsRoot, props.PhongExponentTexturePath, forceOpaqueAlpha: false );
-					if ( exponent is not null )
+					exponentRaw = LoadTexture( materialsRoot, props.PhongExponentTexturePath, forceOpaqueAlpha: false );
+					if ( exponentRaw is not null )
 					{
-						roughness = CreateFromRgba( PbrTextureGenerator.ConvertPhongExponentToRoughness( exponent.Pixels, exponent.Width, exponent.Height ), exponent.Width, exponent.Height );
+						roughness = CreateFromRgba( PbrTextureGenerator.ConvertPhongExponentToRoughness( exponentRaw.Pixels, exponentRaw.Width, exponentRaw.Height ), exponentRaw.Width, exponentRaw.Height );
 					}
 					else
 					{
-						RgbaImage? envMask = LoadTexture( materialsRoot, props.EnvMapMaskPath, forceOpaqueAlpha: false );
-						if ( envMask is not null )
+						envMaskRaw = LoadTexture( materialsRoot, props.EnvMapMaskPath, forceOpaqueAlpha: false );
+						if ( envMaskRaw is not null )
 						{
-							roughness = InvertRedToGrayscale( envMask );
+							roughness = InvertRedToGrayscale( envMaskRaw );
 						}
 					}
 					break;
 				}
 		}
+
+		var overrideCurves = new MaterialOverrideCurveSettings
+		{
+			Enabled = options.MaterialOverrideLevelsEnabled,
+			InputMin = options.MaterialOverrideInputMin,
+			InputMax = options.MaterialOverrideInputMax,
+			OutputMin = options.MaterialOverrideOutputMin,
+			OutputMax = options.MaterialOverrideOutputMax,
+			Gamma = options.MaterialOverrideGamma
+		};
+
+		ApplyMaterialMapOverride(
+			"roughness",
+			options.RoughnessOverrideSource,
+			options.RoughnessOverrideChannel,
+			materialsRoot,
+			props,
+			ref roughness,
+			baseRaw,
+			bumpRaw,
+			ref armRaw,
+			ref mraoRaw,
+			ref exponentRaw,
+			ref envMaskRaw,
+			ref exoNormalRaw,
+			overrideCurves,
+			warn,
+			sourceMaterialPath
+		);
+
+		ApplyMaterialMapOverride(
+			"metalness",
+			options.MetalnessOverrideSource,
+			options.MetalnessOverrideChannel,
+			materialsRoot,
+			props,
+			ref metalness,
+			baseRaw,
+			bumpRaw,
+			ref armRaw,
+			ref mraoRaw,
+			ref exponentRaw,
+			ref envMaskRaw,
+			ref exoNormalRaw,
+			overrideCurves,
+			warn,
+			sourceMaterialPath
+		);
 
 		string colorPath = WriteTextureVariant( outputRoot, sourceMaterialPath, "color", color );
 		string normalPath = WriteTextureVariant( outputRoot, sourceMaterialPath, "normal", normal );
@@ -511,6 +571,135 @@ internal static class MaterialPipeline
 		}
 	}
 
+	private readonly struct MaterialOverrideCurveSettings
+	{
+		public bool Enabled { get; init; }
+		public float InputMin { get; init; }
+		public float InputMax { get; init; }
+		public float OutputMin { get; init; }
+		public float OutputMax { get; init; }
+		public float Gamma { get; init; }
+	}
+
+	private static void ApplyMaterialMapOverride(
+		string mapName,
+		MaterialOverrideTextureSource source,
+		MaterialOverrideChannel channel,
+		string materialsRoot,
+		ExtractedPbrProperties props,
+		ref RgbaImage mapImage,
+		RgbaImage? baseRaw,
+		RgbaImage? bumpRaw,
+		ref RgbaImage? armRaw,
+		ref RgbaImage? mraoRaw,
+		ref RgbaImage? exponentRaw,
+		ref RgbaImage? envMaskRaw,
+		ref RgbaImage? exoNormalRaw,
+		MaterialOverrideCurveSettings curves,
+		Action<string> warn,
+		string materialPath )
+	{
+		if ( source == MaterialOverrideTextureSource.Auto )
+		{
+			return;
+		}
+
+		RgbaImage? sourceImage = ResolveOverrideSourceTexture(
+			source,
+			materialsRoot,
+			props,
+			baseRaw,
+			bumpRaw,
+			ref armRaw,
+			ref mraoRaw,
+			ref exponentRaw,
+			ref envMaskRaw,
+			ref exoNormalRaw
+		);
+
+		if ( sourceImage is null )
+		{
+			warn( $"[warn] {materialPath}: {mapName} override requested ({source}/{channel}) but source texture was missing. Keeping auto pipeline output." );
+			return;
+		}
+
+		mapImage = ExtractChannelToGrayscale( sourceImage, channel, curves );
+	}
+
+	private static RgbaImage? ResolveOverrideSourceTexture(
+		MaterialOverrideTextureSource source,
+		string materialsRoot,
+		ExtractedPbrProperties props,
+		RgbaImage? baseRaw,
+		RgbaImage? bumpRaw,
+		ref RgbaImage? armRaw,
+		ref RgbaImage? mraoRaw,
+		ref RgbaImage? exponentRaw,
+		ref RgbaImage? envMaskRaw,
+		ref RgbaImage? exoNormalRaw )
+	{
+		return source switch
+		{
+			MaterialOverrideTextureSource.Auto => null,
+			MaterialOverrideTextureSource.BaseTexture => baseRaw,
+			MaterialOverrideTextureSource.NormalMap => bumpRaw,
+			MaterialOverrideTextureSource.ArmTexture => armRaw ??= LoadTexture( materialsRoot, props.ArmTexturePath, forceOpaqueAlpha: false ),
+			MaterialOverrideTextureSource.MraoTexture => mraoRaw ??= LoadTexture( materialsRoot, props.MraoTexturePath, forceOpaqueAlpha: false ),
+			MaterialOverrideTextureSource.PhongExponentTexture => exponentRaw ??= LoadTexture( materialsRoot, props.PhongExponentTexturePath, forceOpaqueAlpha: false ),
+			MaterialOverrideTextureSource.EnvMaskTexture => envMaskRaw ??= LoadTexture( materialsRoot, props.EnvMapMaskPath, forceOpaqueAlpha: false ),
+			MaterialOverrideTextureSource.ExoNormalTexture => exoNormalRaw ??= LoadTexture( materialsRoot, props.ExoNormalPath, forceOpaqueAlpha: false ),
+			_ => null
+		};
+	}
+
+	private static RgbaImage ExtractChannelToGrayscale( RgbaImage source, MaterialOverrideChannel channel, MaterialOverrideCurveSettings curves )
+	{
+		var output = new byte[source.Width * source.Height * 4];
+		int channelIndex = channel switch
+		{
+			MaterialOverrideChannel.Red => 0,
+			MaterialOverrideChannel.Green => 1,
+			MaterialOverrideChannel.Blue => 2,
+			MaterialOverrideChannel.Alpha => 3,
+			_ => 0
+		};
+
+		int pixels = source.Width * source.Height;
+		for ( int i = 0; i < pixels; i++ )
+		{
+			byte value = source.Pixels[i * 4 + channelIndex];
+			float normalized = value / 255f;
+			if ( curves.Enabled )
+			{
+				normalized = ApplyLevelsCurve( normalized, curves );
+			}
+
+			byte mapped = (byte)Math.Clamp( (int)MathF.Round( normalized * 255f ), 0, 255 );
+			output[i * 4 + 0] = mapped;
+			output[i * 4 + 1] = mapped;
+			output[i * 4 + 2] = mapped;
+			output[i * 4 + 3] = 255;
+		}
+
+		return CreateFromRgba( output, source.Width, source.Height );
+	}
+
+	private static float ApplyLevelsCurve( float value, MaterialOverrideCurveSettings curves )
+	{
+		float inMin = Math.Clamp( curves.InputMin, 0f, 1f );
+		float inMax = Math.Clamp( curves.InputMax, 0f, 1f );
+		float outMin = Math.Clamp( curves.OutputMin, 0f, 1f );
+		float outMax = Math.Clamp( curves.OutputMax, 0f, 1f );
+		float gamma = curves.Gamma <= 0f ? 1f : curves.Gamma;
+
+		float inputRange = MathF.Max( inMax - inMin, 1e-6f );
+		float t = Math.Clamp( (value - inMin) / inputRange, 0f, 1f );
+		t = MathF.Pow( t, 1f / gamma );
+
+		float outputRange = outMax - outMin;
+		return Math.Clamp( outMin + (t * outputRange), 0f, 1f );
+	}
+
 	private static RgbaImage ExtractMwbRoughnessFromNormalAlpha( RgbaImage bumpRaw )
 	{
 		var roughData = new byte[bumpRaw.Width * bumpRaw.Height * 4];
@@ -647,20 +836,305 @@ internal static class MaterialPipeline
 		WriteWithFileLock( vmatAbsolutePath, () => File.WriteAllText( vmatAbsolutePath, contents, new UTF8Encoding( false ) ) );
 	}
 
-	private static void WriteEyeVmat( string vmatAbsolutePath, string irisPath, string corneaPath, ExtractedPbrProperties props )
+	private sealed class EyeShaderProjectionData
+	{
+		public required Vector3 EyeOrigin { get; init; }
+		public required Vector4 IrisProjectionU { get; init; }
+		public required Vector4 IrisProjectionV { get; init; }
+		public required float EyeballRadius { get; init; }
+	}
+
+	private static void WriteEyeVmat(
+		string vmatAbsolutePath,
+		string irisPath,
+		string corneaPath,
+		ExtractedPbrProperties props )
 	{
 		Directory.CreateDirectory( Path.GetDirectoryName( vmatAbsolutePath ) ?? "." );
 
-		var sb = new StringBuilder( 384 );
+		var sb = new StringBuilder( 1024 );
 		sb.AppendLine( "\"Layer0\"" );
 		sb.AppendLine( "{" );
-		AppendKeyValue( sb, "shader", "shaders/gmod_eyes.shader" );
-		AppendKeyValue( sb, "Iris", irisPath );
-		AppendKeyValue( sb, "Cornea", corneaPath );
-		AppendKeyValue( sb, "g_flGlossiness", FmtFloat( props.EyeGlossiness ) );
+		AppendKeyValue( sb, "shader", "shaders/eyeball.shader" );
+		sb.AppendLine();
+		sb.AppendLine( "\t//---- Animation ----" );
+		sb.AppendLine( "\tF_MORPH_SUPPORTED 1" );
+		sb.AppendLine();
+		sb.AppendLine( "\t//---- Specular ----" );
+		sb.AppendLine( "\tF_SPECULAR_CUBE_MAP 1" );
+		sb.AppendLine();
+		sb.AppendLine( "\t//---- Color ----" );
+		AppendKeyValue( sb, "g_flModelTintAmount", "1.000" );
+		AppendKeyValue( sb, "g_vColorTint", "[1.000000 1.000000 1.000000 0.000000]" );
+		AppendKeyValue( sb, "TextureColor", irisPath );
+		sb.AppendLine();
+		sb.AppendLine( "\t//---- Fade ----" );
+		AppendKeyValue( sb, "g_flFadeExponent", "1.000" );
+		sb.AppendLine();
+		sb.AppendLine( "\t//---- Fog ----" );
+		AppendKeyValue( sb, "g_bFogEnabled", "1" );
+		sb.AppendLine();
+		sb.AppendLine( "\t//---- Iris ----" );
+		AppendKeyValue( sb, "g_flIrisBumpStrength", FmtFloat( props.EyeCorneaBumpStrength ) );
+		AppendKeyValue( sb, "g_flParallaxStrength", "0.000" );
+		AppendKeyValue( sb, "g_vIrisAutoexposureRange", "[0.000 0.000]" );
+		AppendKeyValue( sb, "IrisNormal", corneaPath );
+		AppendKeyValue( sb, "IrisRoughness", "[1.000000 1.000000 1.000000 0.000000]" );
+		AppendKeyValue( sb, "TextureIrisMask", irisPath );
+		sb.AppendLine();
+		sb.AppendLine( "\t//---- Lighting ----" );
+		AppendKeyValue( sb, "g_vReflectanceRange", "[1.000 1.000]" );
+		AppendKeyValue( sb, "TextureReflectance", "materials/default/default_refl.tga" );
+		sb.AppendLine();
+		sb.AppendLine( "\t//---- Normal ----" );
+		AppendKeyValue( sb, "g_flCorneaScleraBumpStrength", "0.000" );
+		AppendKeyValue( sb, "g_flScleraDiffuseExponent", "1.000" );
+		AppendKeyValue( sb, "g_flScleraDiffuseWrap", "1.000" );
+		AppendKeyValue( sb, "TextureNormal", "[0.501961 0.501961 1.000000 0.000000]" );
+		sb.AppendLine();
+		sb.AppendLine( "\t//---- Occlusion ----" );
+		AppendKeyValue( sb, "g_flOcclusionStrength", "0.000" );
+		AppendKeyValue( sb, "g_flOcclusionWidth", "0.100" );
+		AppendKeyValue( sb, "TextureOcclusion", "[1.000000 1.000000 1.000000 0.000000]" );
+		sb.AppendLine();
+		sb.AppendLine( "\t//---- Texture Coordinates ----" );
+		AppendKeyValue( sb, "g_nScaleTexCoordUByModelScaleAxis", "0" );
+		AppendKeyValue( sb, "g_nScaleTexCoordVByModelScaleAxis", "0" );
+		AppendKeyValue( sb, "g_vTexCoordOffset", "[0.000 0.000]" );
+		AppendKeyValue( sb, "g_vTexCoordScale", "[1.000 1.000]" );
+		AppendKeyValue( sb, "g_vTexCoordScrollSpeed", "[0.000 0.000]" );
+		sb.AppendLine();
+		sb.AppendLine( "\tAttributes" );
+		sb.AppendLine( "\t{" );
+		AppendKeyValue( sb, "eyes", "1" );
+		sb.AppendLine( "\t}" );
+
 		sb.AppendLine( "}" );
 		string contents = sb.ToString();
 		WriteWithFileLock( vmatAbsolutePath, () => File.WriteAllText( vmatAbsolutePath, contents, new UTF8Encoding( false ) ) );
+	}
+
+	private static EyeShaderProjectionData? TryResolveEyeProjectionData( MdlFile mdl, string sourceMaterialPath )
+	{
+		if ( mdl.Eyeballs.Count == 0 || mdl.Materials.Count == 0 || string.IsNullOrWhiteSpace( sourceMaterialPath ) )
+		{
+			return null;
+		}
+
+		string normalizedMaterialPath = NormalizeMaterialPath( sourceMaterialPath );
+		string materialLeafName = normalizedMaterialPath;
+		int slashIndex = materialLeafName.LastIndexOf( '/' );
+		if ( slashIndex >= 0 && slashIndex + 1 < materialLeafName.Length )
+		{
+			materialLeafName = materialLeafName[(slashIndex + 1)..];
+		}
+
+		int materialIndex = -1;
+		for ( int i = 0; i < mdl.Materials.Count; i++ )
+		{
+			string normalizedCandidate = NormalizeMaterialPath( mdl.Materials[i] );
+			if ( string.Equals( normalizedCandidate, normalizedMaterialPath, StringComparison.OrdinalIgnoreCase )
+				|| string.Equals( normalizedCandidate, materialLeafName, StringComparison.OrdinalIgnoreCase ) )
+			{
+				materialIndex = i;
+				break;
+			}
+		}
+
+		if ( materialIndex < 0 )
+		{
+			return null;
+		}
+
+		List<MdlEyeball> matches = mdl.Eyeballs
+			.Where( e => e.TextureIndex == materialIndex )
+			.ToList();
+
+		if ( matches.Count == 0 )
+		{
+			return null;
+		}
+
+		MdlEyeball eyeball = PickEyeballForMaterial( matches, normalizedMaterialPath );
+		BuildBoneWorldTransforms( mdl.Bones, out System.Numerics.Vector3[] worldPositions, out System.Numerics.Quaternion[] worldRotations );
+
+		System.Numerics.Vector3 localOrigin = new( eyeball.Origin.x, eyeball.Origin.y, eyeball.Origin.z );
+		System.Numerics.Vector3 localUp = new( eyeball.Up.x, eyeball.Up.y, eyeball.Up.z );
+		System.Numerics.Vector3 localForward = new( eyeball.Forward.x, eyeball.Forward.y, eyeball.Forward.z );
+
+		System.Numerics.Vector3 worldOrigin = localOrigin;
+		System.Numerics.Vector3 worldUp = localUp;
+		System.Numerics.Vector3 worldForward = localForward;
+
+		if ( eyeball.BoneIndex >= 0 && eyeball.BoneIndex < worldPositions.Length )
+		{
+			System.Numerics.Quaternion boneRotation = worldRotations[eyeball.BoneIndex];
+			worldOrigin = worldPositions[eyeball.BoneIndex] + System.Numerics.Vector3.Transform( localOrigin, boneRotation );
+			worldUp = System.Numerics.Vector3.Transform( localUp, boneRotation );
+			worldForward = System.Numerics.Vector3.Transform( localForward, boneRotation );
+		}
+
+		if ( worldUp.LengthSquared() < 1e-8f )
+		{
+			worldUp = new System.Numerics.Vector3( 0f, 0f, 1f );
+		}
+		else
+		{
+			worldUp = System.Numerics.Vector3.Normalize( worldUp );
+		}
+
+		if ( worldForward.LengthSquared() < 1e-8f )
+		{
+			worldForward = new System.Numerics.Vector3( 1f, 0f, 0f );
+		}
+		else
+		{
+			worldForward = System.Numerics.Vector3.Normalize( worldForward );
+		}
+
+		System.Numerics.Vector3 left = System.Numerics.Vector3.Cross( worldUp, worldForward );
+		if ( left.LengthSquared() < 1e-8f )
+		{
+			left = System.Numerics.Vector3.Cross( worldUp, new System.Numerics.Vector3( 0f, 1f, 0f ) );
+		}
+		if ( left.LengthSquared() < 1e-8f )
+		{
+			left = new System.Numerics.Vector3( 0f, 1f, 0f );
+		}
+		left = System.Numerics.Vector3.Normalize( left );
+
+		float radius = eyeball.Radius > 1e-4f ? eyeball.Radius : 0.5f;
+		// MDL stores mstudioeyeball_t::iris_scale as reciprocal QC pupil scale.
+		// QC: iris_scale ~= 0.52, MDL IrisScale ~= 1.923 (1 / 0.52).
+		// EyeRefract projection expects the QC-side value, so invert first.
+		float irisScaleReciprocal = eyeball.IrisScale > 1e-4f ? eyeball.IrisScale : 1.0f;
+		float irisScale = 1.0f / irisScaleReciprocal;
+		float scale = irisScale / (radius * 2.0f);
+
+		float uOffset = -(System.Numerics.Vector3.Dot( left, worldOrigin ) * scale) + 0.5f;
+		float vOffset = -(System.Numerics.Vector3.Dot( worldUp, worldOrigin ) * scale) + 0.5f;
+
+		return new EyeShaderProjectionData
+		{
+			EyeOrigin = new Vector3( worldOrigin.X, worldOrigin.Y, worldOrigin.Z ),
+			IrisProjectionU = new Vector4( left.X * scale, left.Y * scale, left.Z * scale, uOffset ),
+			IrisProjectionV = new Vector4( worldUp.X * scale, worldUp.Y * scale, worldUp.Z * scale, vOffset ),
+			EyeballRadius = radius
+		};
+	}
+
+	private static MdlEyeball PickEyeballForMaterial( List<MdlEyeball> matches, string normalizedMaterialPath )
+	{
+		if ( matches.Count == 1 )
+		{
+			return matches[0];
+		}
+
+		bool wantsLeft = normalizedMaterialPath.Contains( "left", StringComparison.OrdinalIgnoreCase )
+			|| normalizedMaterialPath.EndsWith( "_l", StringComparison.OrdinalIgnoreCase )
+			|| normalizedMaterialPath.Contains( "eyeball_l", StringComparison.OrdinalIgnoreCase );
+		bool wantsRight = normalizedMaterialPath.Contains( "right", StringComparison.OrdinalIgnoreCase )
+			|| normalizedMaterialPath.EndsWith( "_r", StringComparison.OrdinalIgnoreCase )
+			|| normalizedMaterialPath.Contains( "eyeball_r", StringComparison.OrdinalIgnoreCase );
+
+		if ( wantsLeft )
+		{
+			MdlEyeball? left = matches.FirstOrDefault( m =>
+				m.Name.Contains( "left", StringComparison.OrdinalIgnoreCase )
+				|| m.Name.EndsWith( "_l", StringComparison.OrdinalIgnoreCase )
+				|| m.Name.Contains( "eyeball_l", StringComparison.OrdinalIgnoreCase ) );
+			if ( left is not null )
+			{
+				return left;
+			}
+		}
+
+		if ( wantsRight )
+		{
+			MdlEyeball? right = matches.FirstOrDefault( m =>
+				m.Name.Contains( "right", StringComparison.OrdinalIgnoreCase )
+				|| m.Name.EndsWith( "_r", StringComparison.OrdinalIgnoreCase )
+				|| m.Name.Contains( "eyeball_r", StringComparison.OrdinalIgnoreCase ) );
+			if ( right is not null )
+			{
+				return right;
+			}
+		}
+
+		return matches[0];
+	}
+
+	private static string NormalizeMaterialPath( string value )
+	{
+		if ( string.IsNullOrWhiteSpace( value ) )
+		{
+			return string.Empty;
+		}
+
+		string normalized = value.Replace( '\\', '/' ).Trim().TrimStart( '/' );
+		if ( normalized.EndsWith( ".vmt", StringComparison.OrdinalIgnoreCase ) )
+		{
+			normalized = normalized[..^4];
+		}
+
+		return normalized.ToLowerInvariant();
+	}
+
+	private static void BuildBoneWorldTransforms(
+		List<MdlBone> bones,
+		out System.Numerics.Vector3[] worldPositions,
+		out System.Numerics.Quaternion[] worldRotations )
+	{
+		worldPositions = new System.Numerics.Vector3[bones.Count];
+		worldRotations = new System.Numerics.Quaternion[bones.Count];
+		var computed = new bool[bones.Count];
+
+		for ( int i = 0; i < bones.Count; i++ )
+		{
+			EnsureBoneWorldTransform( i, bones, worldPositions, worldRotations, computed );
+		}
+	}
+
+	private static void EnsureBoneWorldTransform(
+		int boneIndex,
+		List<MdlBone> bones,
+		System.Numerics.Vector3[] worldPositions,
+		System.Numerics.Quaternion[] worldRotations,
+		bool[] computed )
+	{
+		if ( computed[boneIndex] )
+		{
+			return;
+		}
+
+		MdlBone bone = bones[boneIndex];
+		System.Numerics.Vector3 localPos = new( bone.Position.x, bone.Position.y, bone.Position.z );
+		System.Numerics.Quaternion localRot = new( bone.Quaternion.x, bone.Quaternion.y, bone.Quaternion.z, bone.Quaternion.w );
+		if ( localRot.LengthSquared() < 1e-8f )
+		{
+			localRot = System.Numerics.Quaternion.Identity;
+		}
+		else
+		{
+			localRot = System.Numerics.Quaternion.Normalize( localRot );
+		}
+
+		if ( bone.ParentIndex >= 0 && bone.ParentIndex < bones.Count )
+		{
+			EnsureBoneWorldTransform( bone.ParentIndex, bones, worldPositions, worldRotations, computed );
+			System.Numerics.Quaternion parentRot = worldRotations[bone.ParentIndex];
+			System.Numerics.Vector3 parentPos = worldPositions[bone.ParentIndex];
+			System.Numerics.Vector3 rotatedLocal = System.Numerics.Vector3.Transform( localPos, parentRot );
+			worldPositions[boneIndex] = parentPos + rotatedLocal;
+			worldRotations[boneIndex] = System.Numerics.Quaternion.Normalize( localRot * parentRot );
+		}
+		else
+		{
+			worldPositions[boneIndex] = localPos;
+			worldRotations[boneIndex] = localRot;
+		}
+
+		computed[boneIndex] = true;
 	}
 
 	private static void WriteWithFileLock( string path, Action writer )

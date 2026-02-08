@@ -20,7 +20,6 @@ internal static class ShaderCopyPipeline
 		{
 			string extension = Path.GetExtension( file );
 			if ( !string.Equals( extension, ".shader", StringComparison.OrdinalIgnoreCase )
-				&& !string.Equals( extension, ".shader_c", StringComparison.OrdinalIgnoreCase )
 				&& !string.Equals( extension, ".shdrgrph", StringComparison.OrdinalIgnoreCase ) )
 			{
 				continue;
@@ -29,6 +28,17 @@ internal static class ShaderCopyPipeline
 			string destination = Path.Combine( targetDirectory, Path.GetFileName( file ) );
 			File.Copy( file, destination, overwrite: true );
 			copied++;
+
+			// Never ship stale compiled blobs when we copy source shaders.
+			// Let s&box recompile from the .shader source in the target project.
+			if ( string.Equals( extension, ".shader", StringComparison.OrdinalIgnoreCase ) )
+			{
+				string compiledDestination = destination + "_c";
+				if ( File.Exists( compiledDestination ) )
+				{
+					File.Delete( compiledDestination );
+				}
+			}
 		}
 
 		if ( copied > 0 )

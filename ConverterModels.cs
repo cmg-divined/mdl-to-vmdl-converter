@@ -9,6 +9,7 @@ internal sealed class BuildContext
 	public IReadOnlyList<string> ExportBoneNames { get; set; } = Array.Empty<string>();
 	public HashSet<string> SourceMaterials { get; } = new( StringComparer.OrdinalIgnoreCase );
 	public List<MaterialRemapExport> MaterialRemaps { get; } = new();
+	public List<MaterialGroupExport> MaterialGroups { get; } = new();
 	public List<MeshExport> Meshes { get; } = new();
 	public List<BodyGroupExport> BodyGroups { get; } = new();
 	public List<HitboxSetExport> HitboxSets { get; } = new();
@@ -58,6 +59,12 @@ internal sealed class MaterialRemapExport
 {
 	public required string From { get; init; }
 	public required string To { get; init; }
+}
+
+internal sealed class MaterialGroupExport
+{
+	public required string Name { get; init; }
+	public required List<MaterialRemapExport> Remaps { get; init; }
 }
 
 internal sealed class HitboxSetExport

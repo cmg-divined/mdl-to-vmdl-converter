@@ -247,6 +247,7 @@ internal static class ConversionRunner
 			);
 
 			buildContext.MaterialRemaps.AddRange( materialResult.Remaps );
+			BuildSkinMaterialGroups( buildContext, info, warn );
 
 			if ( copyShaders )
 			{
@@ -301,8 +302,185 @@ internal static class ConversionRunner
 			ConvertMaterials = baseOptions.ConvertMaterials,
 			CopyShaders = baseOptions.CopyShaders,
 			Verbose = baseOptions.Verbose,
-			MaterialProfileOverride = baseOptions.MaterialProfileOverride
+			MaterialProfileOverride = baseOptions.MaterialProfileOverride,
+			RoughnessOverrideSource = baseOptions.RoughnessOverrideSource,
+			RoughnessOverrideChannel = baseOptions.RoughnessOverrideChannel,
+			MetalnessOverrideSource = baseOptions.MetalnessOverrideSource,
+			MetalnessOverrideChannel = baseOptions.MetalnessOverrideChannel,
+			MaterialOverrideLevelsEnabled = baseOptions.MaterialOverrideLevelsEnabled,
+			MaterialOverrideInputMin = baseOptions.MaterialOverrideInputMin,
+			MaterialOverrideInputMax = baseOptions.MaterialOverrideInputMax,
+			MaterialOverrideGamma = baseOptions.MaterialOverrideGamma,
+			MaterialOverrideOutputMin = baseOptions.MaterialOverrideOutputMin,
+			MaterialOverrideOutputMax = baseOptions.MaterialOverrideOutputMax
 		};
+	}
+
+	private static void BuildSkinMaterialGroups( BuildContext context, Action<string> info, Action<string> warn )
+	{
+		MdlFile mdl = context.SourceModel.Mdl;
+		if ( mdl.SkinFamilies.Count <= 1 || mdl.Materials.Count == 0 || context.MaterialRemaps.Count == 0 )
+		{
+			return;
+		}
+
+		var remapByFrom = new Dictionary<string, string>( StringComparer.OrdinalIgnoreCase );
+		foreach ( MaterialRemapExport remap in context.MaterialRemaps )
+		{
+			string key = NormalizeMaterialRemapKey( remap.From );
+			if ( string.IsNullOrWhiteSpace( key ) )
+			{
+				continue;
+			}
+
+			if ( !remapByFrom.ContainsKey( key ) )
+			{
+				remapByFrom[key] = remap.To;
+			}
+		}
+
+		if ( remapByFrom.Count == 0 )
+		{
+			return;
+		}
+
+		short[] defaultFamily = mdl.SkinFamilies[0];
+		if ( defaultFamily.Length == 0 )
+		{
+			return;
+		}
+
+		int groupsAdded = 0;
+		for ( int familyIndex = 1; familyIndex < mdl.SkinFamilies.Count; familyIndex++ )
+		{
+			short[] family = mdl.SkinFamilies[familyIndex];
+			int columnCount = Math.Min( defaultFamily.Length, family.Length );
+			if ( columnCount <= 0 )
+			{
+				continue;
+			}
+
+			var remaps = new List<MaterialRemapExport>();
+			var seenFromTargets = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+
+			for ( int column = 0; column < columnCount; column++ )
+			{
+				int defaultMaterialIndex = defaultFamily[column];
+				int skinMaterialIndex = family[column];
+				if ( defaultMaterialIndex == skinMaterialIndex )
+				{
+					continue;
+				}
+
+				if ( defaultMaterialIndex < 0 || defaultMaterialIndex >= mdl.Materials.Count )
+				{
+					continue;
+				}
+
+				if ( skinMaterialIndex < 0 || skinMaterialIndex >= mdl.Materials.Count )
+				{
+					continue;
+				}
+
+				string defaultMaterialToken = NameUtil.CleanMaterialName( mdl.Materials[defaultMaterialIndex] );
+				string skinMaterialToken = NameUtil.CleanMaterialName( mdl.Materials[skinMaterialIndex] );
+				if ( string.IsNullOrWhiteSpace( defaultMaterialToken ) || string.IsNullOrWhiteSpace( skinMaterialToken ) )
+				{
+					continue;
+				}
+
+				string defaultFromKey = ToMaterialRemapFromKey( defaultMaterialToken );
+				string skinFromKey = ToMaterialRemapFromKey( skinMaterialToken );
+				if ( !remapByFrom.TryGetValue( defaultFromKey, out string? defaultTargetPath ) )
+				{
+					continue;
+				}
+
+				if ( !remapByFrom.TryGetValue( skinFromKey, out string? skinTargetPath ) )
+				{
+					// Material was referenced by a skin family but failed conversion.
+					warn( $"[warn] Missing converted material for skin entry '{skinMaterialToken}' (family {familyIndex}, column {column})" );
+					continue;
+				}
+
+				if ( string.IsNullOrWhiteSpace( defaultTargetPath ) || string.IsNullOrWhiteSpace( skinTargetPath ) )
+				{
+					continue;
+				}
+
+				if ( string.Equals( defaultTargetPath, skinTargetPath, StringComparison.OrdinalIgnoreCase ) )
+				{
+					continue;
+				}
+
+				// Multiple columns can point to the same default material; keep first remap.
+				if ( !seenFromTargets.Add( defaultTargetPath ) )
+				{
+					continue;
+				}
+
+				remaps.Add( new MaterialRemapExport
+				{
+					From = defaultTargetPath,
+					To = skinTargetPath
+				} );
+			}
+
+			if ( remaps.Count == 0 )
+			{
+				continue;
+			}
+
+			context.MaterialGroups.Add( new MaterialGroupExport
+			{
+				Name = $"skin_{familyIndex}",
+				Remaps = remaps
+			} );
+			groupsAdded++;
+		}
+
+		if ( groupsAdded > 0 )
+		{
+			info( $"Skin material groups generated: {groupsAdded}" );
+		}
+	}
+
+	private static string ToMaterialRemapFromKey( string materialToken )
+	{
+		string normalized = NormalizeMaterialRemapKey( materialToken );
+		if ( string.IsNullOrWhiteSpace( normalized ) )
+		{
+			normalized = "default";
+		}
+
+		if ( normalized.EndsWith( ".vmat", StringComparison.OrdinalIgnoreCase ) )
+		{
+			return normalized;
+		}
+
+		if ( normalized.EndsWith( ".vmt", StringComparison.OrdinalIgnoreCase ) )
+		{
+			return normalized[..^4] + ".vmat";
+		}
+
+		return normalized + ".vmat";
+	}
+
+	private static string NormalizeMaterialRemapKey( string raw )
+	{
+		if ( string.IsNullOrWhiteSpace( raw ) )
+		{
+			return string.Empty;
+		}
+
+		string value = raw.Trim().Replace( '\\', '/' );
+		while ( value.Contains( "//", StringComparison.Ordinal ) )
+		{
+			value = value.Replace( "//", "/", StringComparison.Ordinal );
+		}
+
+		value = value.Trim( '/' );
+		return value;
 	}
 
 	private static string ResolveModelOutputDirectory( ConverterOptions options, string outputRoot, string? gmodRoot, string mdlPath )

@@ -1545,9 +1545,9 @@ public class MdlEyeball
 		// Left vector is perpendicular to forward and up
 		var left = Vector3.Cross( Up, Forward ).Normal;
 		
-		// Scale based on iris scale and radius
-		// iris_scale typically around 0.5-1.0, radius around 0.5-1.0
-		float scale = 1.0f / ( Radius * IrisScale * 2.0f );
+		// MDL stores IrisScale as reciprocal of QC iris_scale.
+		// Example: QC 0.52 -> MDL 1.923.
+		float scale = IrisScale / ( Radius * 2.0f );
 		
 		// The W component is the offset: -dot(left, origin) * scale + 0.5
 		// This centers the UV at 0.5 when world pos equals origin
@@ -1562,7 +1562,7 @@ public class MdlEyeball
 	public Vector4 ComputeIrisProjectionV()
 	{
 		// Up vector scaled for projection
-		float scale = 1.0f / ( Radius * IrisScale * 2.0f );
+		float scale = IrisScale / ( Radius * 2.0f );
 		
 		// The W component centers the UV
 		float offset = -Vector3.Dot( Up, Origin ) * scale + 0.5f;

@@ -875,11 +875,35 @@ internal static class ConverterPipeline
 
 	private static void CollectSourceMaterials( BuildContext context )
 	{
+		MdlFile mdl = context.SourceModel.Mdl;
+
 		foreach ( MeshExport mesh in context.Meshes )
 		{
 			foreach ( TriangleRecord triangle in mesh.Triangles )
 			{
 				string material = triangle.Material;
+				if ( string.IsNullOrWhiteSpace( material ) || string.Equals( material, "__skeleton_anchor", StringComparison.OrdinalIgnoreCase ) )
+				{
+					continue;
+				}
+
+				context.SourceMaterials.Add( material );
+			}
+		}
+
+		// Include materials referenced by any skin family so alternate skins
+		// can be converted and remapped into additional MaterialGroups.
+		foreach ( short[] family in mdl.SkinFamilies )
+		{
+			foreach ( short materialIndexShort in family )
+			{
+				int materialIndex = materialIndexShort;
+				if ( materialIndex < 0 || materialIndex >= mdl.Materials.Count )
+				{
+					continue;
+				}
+
+				string material = NameUtil.CleanMaterialName( mdl.Materials[materialIndex] );
 				if ( string.IsNullOrWhiteSpace( material ) || string.Equals( material, "__skeleton_anchor", StringComparison.OrdinalIgnoreCase ) )
 				{
 					continue;

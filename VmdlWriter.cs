@@ -103,7 +103,7 @@ internal static class VmdlWriter
 
 	private static void WriteMaterialGroupList( StreamWriter writer, BuildContext context, int indent )
 	{
-		if ( context.MaterialRemaps.Count == 0 )
+		if ( context.MaterialRemaps.Count == 0 && context.MaterialGroups.Count == 0 )
 		{
 			return;
 		}
@@ -112,6 +112,7 @@ internal static class VmdlWriter
 		WriteLine( writer, indent + 1, "_class = \"MaterialGroupList\"" );
 		WriteLine( writer, indent + 1, "children =" );
 		WriteLine( writer, indent + 1, "[" );
+
 		WriteLine( writer, indent + 2, "{" );
 		WriteLine( writer, indent + 3, "_class = \"DefaultMaterialGroup\"" );
 		WriteLine( writer, indent + 3, "remaps =" );
@@ -127,6 +128,25 @@ internal static class VmdlWriter
 		WriteLine( writer, indent + 3, "use_global_default = false" );
 		WriteLine( writer, indent + 3, "global_default_material = \"\"" );
 		WriteLine( writer, indent + 2, "}," );
+
+		foreach ( MaterialGroupExport materialGroup in context.MaterialGroups )
+		{
+			WriteLine( writer, indent + 2, "{" );
+			WriteLine( writer, indent + 3, "_class = \"MaterialGroup\"" );
+			WriteLine( writer, indent + 3, $"name = \"{Escape( materialGroup.Name )}\"" );
+			WriteLine( writer, indent + 3, "remaps =" );
+			WriteLine( writer, indent + 3, "[" );
+			foreach ( MaterialRemapExport remap in materialGroup.Remaps )
+			{
+				WriteLine( writer, indent + 4, "{" );
+				WriteLine( writer, indent + 5, $"from = \"{Escape( remap.From )}\"" );
+				WriteLine( writer, indent + 5, $"to = \"{Escape( remap.To )}\"" );
+				WriteLine( writer, indent + 4, "}," );
+			}
+			WriteLine( writer, indent + 3, "]" );
+			WriteLine( writer, indent + 2, "}," );
+		}
+
 		WriteLine( writer, indent + 1, "]" );
 		WriteLine( writer, indent, "}," );
 	}
