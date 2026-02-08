@@ -253,12 +253,57 @@ public class VtfFile
 	}
 
 	/// <summary>
+	/// Get the largest mip level data for a specific animation frame.
+	/// </summary>
+	public byte[] GetLargestMipData( int frameIndex )
+	{
+		byte[] data = GetLargestMipData();
+		if ( data == null || data.Length == 0 )
+		{
+			return null;
+		}
+
+		int frameCount = Math.Max( 1, FrameCount );
+		if ( frameCount == 1 )
+		{
+			return data;
+		}
+
+		int frameSize = CalculateImageSize( Format, Width, Height );
+		if ( frameSize <= 0 || data.Length < frameSize )
+		{
+			return data;
+		}
+
+		int safeFrame = ((frameIndex % frameCount) + frameCount) % frameCount;
+		int frameOffset = safeFrame * frameSize;
+		if ( frameOffset + frameSize > data.Length )
+		{
+			return data;
+		}
+
+		var frameData = new byte[frameSize];
+		Buffer.BlockCopy( data, frameOffset, frameData, 0, frameSize );
+		return frameData;
+	}
+
+	/// <summary>
 	/// Convert to RGBA8888 format for s&box texture creation.
 	/// </summary>
 	/// <param name="forceOpaqueAlpha">If true, sets alpha to 255 for all pixels (useful for non-transparent materials that store other data in alpha)</param>
 	public byte[] ConvertToRGBA( bool forceOpaqueAlpha = false )
 	{
-		var data = GetLargestMipData();
+		return ConvertToRGBA( 0, forceOpaqueAlpha );
+	}
+
+	/// <summary>
+	/// Convert a specific animation frame to RGBA8888 format for s&box texture creation.
+	/// </summary>
+	/// <param name="frameIndex">Frame index to extract when VTF contains multiple frames.</param>
+	/// <param name="forceOpaqueAlpha">If true, sets alpha to 255 for all pixels.</param>
+	public byte[] ConvertToRGBA( int frameIndex, bool forceOpaqueAlpha = false )
+	{
+		var data = GetLargestMipData( frameIndex );
 		if ( data == null )
 			return null;
 

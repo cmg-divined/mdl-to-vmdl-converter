@@ -7,6 +7,7 @@ internal sealed class ConversionSummary
 	public required string VmdlPath { get; init; }
 	public int SmdCount { get; init; }
 	public int DmxCount { get; init; }
+	public int AnimationCount { get; init; }
 	public int BodyGroupCount { get; init; }
 	public int HitboxSetCount { get; init; }
 	public int PhysicsShapeCount { get; init; }
@@ -29,6 +30,7 @@ internal sealed class BatchConversionSummary
 	public int Failed { get; init; }
 	public int TotalSmdCount { get; init; }
 	public int TotalDmxCount { get; init; }
+	public int TotalAnimationCount { get; init; }
 	public int TotalMaterialRemapCount { get; init; }
 	public int TotalMorphChannelCount { get; init; }
 	public required IReadOnlyList<BatchConversionFailure> Failures { get; init; }
@@ -109,6 +111,7 @@ internal static class ConversionRunner
 		int failed = 0;
 		int totalSmdCount = 0;
 		int totalDmxCount = 0;
+		int totalAnimationCount = 0;
 		int totalMaterialRemapCount = 0;
 		int totalMorphChannelCount = 0;
 
@@ -132,6 +135,7 @@ internal static class ConversionRunner
 				Interlocked.Increment( ref succeeded );
 				Interlocked.Add( ref totalSmdCount, summary.SmdCount );
 				Interlocked.Add( ref totalDmxCount, summary.DmxCount );
+				Interlocked.Add( ref totalAnimationCount, summary.AnimationCount );
 				Interlocked.Add( ref totalMaterialRemapCount, summary.MaterialRemapCount );
 				Interlocked.Add( ref totalMorphChannelCount, summary.MorphChannelCount );
 				scopedInfo( $"OK -> {summary.VmdlPath}" );
@@ -152,7 +156,7 @@ internal static class ConversionRunner
 			.OrderBy( f => f.MdlPath, StringComparer.OrdinalIgnoreCase )
 			.ToList();
 
-		info( $"Batch finished. success={succeeded}, failed={failed}, smd={totalSmdCount}, dmx={totalDmxCount}, remaps={totalMaterialRemapCount}, morphs={totalMorphChannelCount}" );
+		info( $"Batch finished. success={succeeded}, failed={failed}, smd={totalSmdCount}, dmx={totalDmxCount}, anim={totalAnimationCount}, remaps={totalMaterialRemapCount}, morphs={totalMorphChannelCount}" );
 
 		return new BatchConversionSummary
 		{
@@ -162,6 +166,7 @@ internal static class ConversionRunner
 			Failed = failed,
 			TotalSmdCount = totalSmdCount,
 			TotalDmxCount = totalDmxCount,
+			TotalAnimationCount = totalAnimationCount,
 			TotalMaterialRemapCount = totalMaterialRemapCount,
 			TotalMorphChannelCount = totalMorphChannelCount,
 			Failures = orderedFailures
@@ -234,6 +239,20 @@ internal static class ConversionRunner
 			}
 		}
 
+		int animationCount = 0;
+		if ( options.ExportAnimations && !sourceModel.IsStaticProp )
+		{
+			List<AnimationExport> animations = MdlAnimationPipeline.ExportAnimations(
+				mdlPath,
+				buildContext,
+				modelOutputDirectory,
+				info,
+				warn
+			);
+			buildContext.Animations.AddRange( animations );
+			animationCount = animations.Count;
+		}
+
 		if ( options.ConvertMaterials )
 		{
 			MaterialConversionResult materialResult = MaterialPipeline.Convert(
@@ -274,6 +293,7 @@ internal static class ConversionRunner
 			VmdlPath = vmdlPath,
 			SmdCount = smdCount,
 			DmxCount = dmxCount,
+			AnimationCount = animationCount,
 			BodyGroupCount = buildContext.BodyGroups.Count,
 			HitboxSetCount = buildContext.HitboxSets.Count,
 			PhysicsShapeCount = buildContext.PhysicsShapes.Count,
@@ -301,6 +321,7 @@ internal static class ConversionRunner
 			PreserveModelRelativePath = baseOptions.PreserveModelRelativePath,
 			ConvertMaterials = baseOptions.ConvertMaterials,
 			CopyShaders = baseOptions.CopyShaders,
+			ExportAnimations = baseOptions.ExportAnimations,
 			Verbose = baseOptions.Verbose,
 			MaterialProfileOverride = baseOptions.MaterialProfileOverride,
 			RoughnessOverrideSource = baseOptions.RoughnessOverrideSource,

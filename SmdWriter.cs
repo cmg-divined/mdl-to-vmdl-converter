@@ -51,6 +51,61 @@ internal static class SmdWriter
 		}
 	}
 
+	public static void WriteAnimation( string path, BuildContext context, string animationName, IReadOnlyList<AnimationFramePose> frames )
+	{
+		SourceModel sourceModel = context.SourceModel;
+		IReadOnlyList<string> exportBoneNames = context.ExportBoneNames;
+		int boneCount = sourceModel.Mdl.Bones.Count;
+
+		using var writer = new StreamWriter( path, false, Encoding.ASCII );
+		writer.WriteLine( "version 1" );
+		writer.WriteLine( "nodes" );
+		foreach ( MdlBone bone in sourceModel.Mdl.Bones )
+		{
+			string boneName = bone.Index >= 0 && bone.Index < exportBoneNames.Count
+				? exportBoneNames[bone.Index]
+				: BoneNameUtil.SanitizeBoneName( bone.Name, $"bone_{bone.Index}" );
+			writer.WriteLine( $"  {bone.Index} \"{Escape( boneName )}\" {bone.ParentIndex}" );
+		}
+		writer.WriteLine( "end" );
+
+		writer.WriteLine( "skeleton" );
+
+		if ( frames.Count == 0 )
+		{
+			writer.WriteLine( "  time 0" );
+			foreach ( MdlBone bone in sourceModel.Mdl.Bones )
+			{
+				writer.WriteLine(
+					$"    {bone.Index} {Fmt( bone.Position.x )} {Fmt( bone.Position.y )} {Fmt( bone.Position.z )} {Fmt( bone.Rotation.x )} {Fmt( bone.Rotation.y )} {Fmt( bone.Rotation.z )}"
+				);
+			}
+		}
+		else
+		{
+			for ( int frameIndex = 0; frameIndex < frames.Count; frameIndex++ )
+			{
+				AnimationFramePose frame = frames[frameIndex];
+				if ( frame.Positions.Length != boneCount || frame.Rotations.Length != boneCount )
+				{
+					throw new InvalidDataException( $"Animation frame {frameIndex} in '{animationName}' has invalid bone transform count." );
+				}
+
+				writer.WriteLine( $"  time {frameIndex}" );
+				for ( int boneIndex = 0; boneIndex < boneCount; boneIndex++ )
+				{
+					Vector3 pos = frame.Positions[boneIndex];
+					Vector3 rot = frame.Rotations[boneIndex];
+					writer.WriteLine(
+						$"    {boneIndex} {Fmt( pos.x )} {Fmt( pos.y )} {Fmt( pos.z )} {Fmt( rot.x )} {Fmt( rot.y )} {Fmt( rot.z )}"
+					);
+				}
+			}
+		}
+
+		writer.WriteLine( "end" );
+	}
+
 	private static void WriteMorphMapSidecar( string smdPath, List<MeshMorphExport> morphs )
 	{
 		var ordered = morphs

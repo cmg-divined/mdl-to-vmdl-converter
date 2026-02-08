@@ -18,6 +18,7 @@ internal static class VmdlWriter
 		WriteRenderMeshList( writer, context, 3 );
 		WriteBodyGroupList( writer, context, 3 );
 		WriteMaterialGroupList( writer, context, 3 );
+		WriteAnimationList( writer, context, 3 );
 		WriteHitboxSetList( writer, context, 3 );
 		WritePhysicsShapeList( writer, context, 3 );
 		WritePhysicsBodyMarkupList( writer, context, 3 );
@@ -147,6 +148,50 @@ internal static class VmdlWriter
 			WriteLine( writer, indent + 2, "}," );
 		}
 
+		WriteLine( writer, indent + 1, "]" );
+		WriteLine( writer, indent, "}," );
+	}
+
+	private static void WriteAnimationList( StreamWriter writer, BuildContext context, int indent )
+	{
+		if ( context.Animations.Count == 0 )
+		{
+			return;
+		}
+
+		WriteLine( writer, indent, "{" );
+		WriteLine( writer, indent + 1, "_class = \"AnimationList\"" );
+		WriteLine( writer, indent + 1, "children =" );
+		WriteLine( writer, indent + 1, "[" );
+		foreach ( AnimationExport animation in context.Animations )
+		{
+			string sourceFilePath = string.IsNullOrWhiteSpace( context.ModelAssetDirectory )
+				? animation.FileName
+				: $"{context.ModelAssetDirectory.TrimEnd( '/' )}/{animation.FileName}";
+
+			WriteLine( writer, indent + 2, "{" );
+			WriteLine( writer, indent + 3, "_class = \"AnimFile\"" );
+			WriteLine( writer, indent + 3, $"name = \"{Escape( animation.Name )}\"" );
+			WriteLine( writer, indent + 3, "activity_name = \"\"" );
+			WriteLine( writer, indent + 3, "activity_weight = 1" );
+			WriteLine( writer, indent + 3, "weight_list_name = \"\"" );
+			WriteLine( writer, indent + 3, "fade_in_time = 0.2" );
+			WriteLine( writer, indent + 3, "fade_out_time = 0.2" );
+			WriteLine( writer, indent + 3, $"looping = {(animation.Looping ? "true" : "false")}" );
+			WriteLine( writer, indent + 3, "delta = false" );
+			WriteLine( writer, indent + 3, "worldSpace = false" );
+			WriteLine( writer, indent + 3, "hidden = false" );
+			WriteLine( writer, indent + 3, "anim_markup_ordered = false" );
+			WriteLine( writer, indent + 3, "disable_compression = false" );
+			WriteLine( writer, indent + 3, "enable_scale = false" );
+			WriteLine( writer, indent + 3, $"source_filename = \"{Escape( sourceFilePath.Replace( '\\', '/' ) )}\"" );
+			WriteLine( writer, indent + 3, "start_frame = -1" );
+			WriteLine( writer, indent + 3, "end_frame = -1" );
+			WriteLine( writer, indent + 3, $"framerate = {Fmt( animation.FrameRate > 0.0f ? animation.FrameRate : -1.0f )}" );
+			WriteLine( writer, indent + 3, "take = 0" );
+			WriteLine( writer, indent + 3, "reverse = false" );
+			WriteLine( writer, indent + 2, "}," );
+		}
 		WriteLine( writer, indent + 1, "]" );
 		WriteLine( writer, indent, "}," );
 	}

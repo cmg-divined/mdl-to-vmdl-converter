@@ -16,8 +16,24 @@ internal sealed class BuildContext
 	public List<PhysicsShapeExport> PhysicsShapes { get; } = new();
 	public List<PhysicsBodyMarkupExport> PhysicsBodies { get; } = new();
 	public List<PhysicsJointExport> PhysicsJoints { get; } = new();
+	public List<AnimationExport> Animations { get; } = new();
 	public List<string> MorphChannels { get; } = new();
 	public int MorphChannelCount { get; set; }
+}
+
+internal sealed class AnimationExport
+{
+	public required string Name { get; init; }
+	public required string FileName { get; init; }
+	public float FrameRate { get; init; }
+	public bool Looping { get; init; }
+	public int FrameCount { get; init; }
+}
+
+internal sealed class AnimationFramePose
+{
+	public required Vector3[] Positions { get; init; }
+	public required Vector3[] Rotations { get; init; }
 }
 
 internal sealed class MeshExport

@@ -30,6 +30,7 @@ internal static class Program
 			Console.WriteLine( $"  Failed: {summary.Failed}" );
 			Console.WriteLine( $"  Total SMD files: {summary.TotalSmdCount}" );
 			Console.WriteLine( $"  Total DMX files: {summary.TotalDmxCount}" );
+			Console.WriteLine( $"  Total animation files: {summary.TotalAnimationCount}" );
 			Console.WriteLine( $"  Total Material remaps: {summary.TotalMaterialRemapCount}" );
 			Console.WriteLine( $"  Total Morph channels: {summary.TotalMorphChannelCount}" );
 
@@ -56,6 +57,7 @@ internal static class Program
 			Console.WriteLine( $"  VMDL: {summary.VmdlPath}" );
 			Console.WriteLine( $"  SMD files: {summary.SmdCount}" );
 			Console.WriteLine( $"  DMX files: {summary.DmxCount}" );
+			Console.WriteLine( $"  Anim files: {summary.AnimationCount}" );
 			Console.WriteLine( $"  Bodygroups: {summary.BodyGroupCount}" );
 			Console.WriteLine( $"  Hitbox sets: {summary.HitboxSetCount}" );
 			Console.WriteLine( $"  Physics shapes: {summary.PhysicsShapeCount}" );
@@ -141,6 +143,7 @@ internal sealed class ConverterOptions
 	public bool PreserveModelRelativePath { get; init; } = true;
 	public bool ConvertMaterials { get; init; } = true;
 	public bool CopyShaders { get; init; } = true;
+	public bool ExportAnimations { get; init; }
 	public bool Verbose { get; init; }
 	public MaterialProfileOverride MaterialProfileOverride { get; init; } = MaterialProfileOverride.Auto;
 	public MaterialOverrideTextureSource RoughnessOverrideSource { get; init; } = MaterialOverrideTextureSource.Auto;
@@ -177,6 +180,7 @@ internal sealed class ConverterOptions
 		bool recursiveSearch = true;
 		bool convertMaterials = true;
 		bool copyShaders = true;
+		bool exportAnimations = false;
 		bool verbose = false;
 		int maxParallelism = Math.Max( 1, Environment.ProcessorCount );
 		MaterialProfileOverride profileOverride = MaterialProfileOverride.Auto;
@@ -253,6 +257,18 @@ internal sealed class ConverterOptions
 			if ( string.Equals( arg, "--no-copy-shaders", StringComparison.OrdinalIgnoreCase ) )
 			{
 				copyShaders = false;
+				continue;
+			}
+
+			if ( string.Equals( arg, "--animations", StringComparison.OrdinalIgnoreCase ) )
+			{
+				exportAnimations = true;
+				continue;
+			}
+
+			if ( string.Equals( arg, "--no-animations", StringComparison.OrdinalIgnoreCase ) )
+			{
+				exportAnimations = false;
 				continue;
 			}
 
@@ -391,6 +407,7 @@ internal sealed class ConverterOptions
 			PreserveModelRelativePath = preservePath,
 			ConvertMaterials = convertMaterials,
 			CopyShaders = copyShaders,
+			ExportAnimations = exportAnimations,
 			MaterialProfileOverride = profileOverride,
 			Verbose = verbose,
 			RoughnessOverrideSource = roughnessOverrideSource,
@@ -520,6 +537,8 @@ internal sealed class ConverterOptions
 		Console.WriteLine( "  --profile <name>       auto|source|exo|gpbr|mwb|bft|madivan18" );
 		Console.WriteLine( "  --copy-shaders         Copy custom gmod shaders to output root (default)" );
 		Console.WriteLine( "  --no-copy-shaders      Do not copy shaders" );
+		Console.WriteLine( "  --animations           Export sequence animations as SMD + add AnimationList" );
+		Console.WriteLine( "  --no-animations        Skip animation export (default)" );
 		Console.WriteLine( "  --shader-src <dir>     Override shader source directory" );
 		Console.WriteLine( "  --rough-source <name>  auto|base|normal|arm|mrao|phongexponent|envmask|exonormal" );
 		Console.WriteLine( "  --rough-channel <c>    r|g|b|a (used when rough-source != auto)" );

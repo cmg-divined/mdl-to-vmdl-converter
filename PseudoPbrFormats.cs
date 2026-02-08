@@ -59,7 +59,10 @@ internal sealed class ExtractedPbrProperties
 	public string IrisTexturePath { get; set; } = string.Empty;
 	public string CorneaTexturePath { get; set; } = string.Empty;
 	public string EyeAmbientOcclTexturePath { get; set; } = string.Empty;
+	public string EyeLightWarpTexturePath { get; set; } = string.Empty;
+	public string EyeEnvMapPath { get; set; } = string.Empty;
 	public float[]? EyeAmbientOcclColor { get; set; }
+	public float EyeAmbientOcclusionStrength { get; set; } = 0f;
 	public float EyeDilation { get; set; } = 0.5f;
 	public float EyeParallaxStrength { get; set; } = 0.25f;
 	public float EyeCorneaBumpStrength { get; set; } = 1f;
@@ -67,6 +70,7 @@ internal sealed class ExtractedPbrProperties
 	public float EyeGlossiness { get; set; } = 0.5f;
 	public bool EyeRaytraceSphere { get; set; } = true;
 	public bool EyeSphereTexKill { get; set; } = true;
+	public int EyeIrisFrame { get; set; }
 }
 
 internal static class PseudoPbrFormats
@@ -160,16 +164,23 @@ internal static class PseudoPbrFormats
 		if ( shaderLower == "eyes" || shaderLower == "eyes_dx8" || shaderLower == "eyerefract" )
 		{
 			props.IsEyeShader = true;
-			props.IrisTexturePath = vmt.GetString( "$iris" );
-			props.CorneaTexturePath = vmt.GetString( "$corneatexture" );
-			props.EyeAmbientOcclTexturePath = vmt.GetString( "$ambientoccltexture" );
+			props.IrisTexturePath = FirstNonEmpty( vmt.GetString( "$iris" ), vmt.BaseTexture );
+			props.CorneaTexturePath = FirstNonEmpty( vmt.GetString( "$corneatexture" ), vmt.BumpMap, vmt.NormalMap );
+			props.EyeAmbientOcclTexturePath = FirstNonEmpty(
+				vmt.GetString( "$ambientoccltexture" ),
+				vmt.GetString( "$ambientocclusiontexture" )
+			);
+			props.EyeLightWarpTexturePath = vmt.GetString( "$lightwarptexture" );
+			props.EyeEnvMapPath = vmt.GetString( "$envmap" );
 			props.EyeDilation = vmt.GetFloat( "$dilation", 0.5f );
 			props.EyeParallaxStrength = vmt.GetFloat( "$parallaxstrength", 0.25f );
 			props.EyeCorneaBumpStrength = vmt.GetFloat( "$corneabumpstrength", 1f );
-			props.EyeGlossiness = vmt.GetFloat( "$glossiness", 0.5f );
+			props.EyeGlossiness = vmt.GetFloat( "$glossiness", 0.75f );
 			props.EyeEyeballRadius = vmt.GetFloat( "$eyeballradius", 0.5f );
+			props.EyeAmbientOcclusionStrength = Math.Clamp( vmt.GetFloat( "$ambientocclusion", 0f ), 0f, 1f );
 			props.EyeRaytraceSphere = vmt.GetBool( "$raytracesphere", true );
 			props.EyeSphereTexKill = vmt.GetBool( "$spheretexkillcombo", true ) || vmt.GetBool( "$spheretexkill", false );
+			props.EyeIrisFrame = Math.Max( 0, vmt.GetInt( "$irisframe", 0 ) );
 
 			Vector3 aoColor = vmt.GetVector3( "$ambientocclcolor" );
 			props.EyeAmbientOcclColor = !IsDefaultVector( aoColor )
@@ -424,6 +435,19 @@ internal static class PseudoPbrFormats
 		return MathF.Abs( value.x ) < 0.000001f
 			&& MathF.Abs( value.y ) < 0.000001f
 			&& MathF.Abs( value.z ) < 0.000001f;
+	}
+
+	private static string FirstNonEmpty( params string[] values )
+	{
+		foreach ( string value in values )
+		{
+			if ( !string.IsNullOrWhiteSpace( value ) )
+			{
+				return value;
+			}
+		}
+
+		return string.Empty;
 	}
 }
 

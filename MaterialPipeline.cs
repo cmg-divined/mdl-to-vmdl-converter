@@ -128,7 +128,12 @@ internal static class MaterialPipeline
 		MaterialConversionResult result,
 		string fromReference )
 	{
-		RgbaImage? irisRaw = LoadTexture( materialsRoot, props.IrisTexturePath, forceOpaqueAlpha: false )
+		RgbaImage? irisRaw = LoadTexture(
+			materialsRoot,
+			props.IrisTexturePath,
+			forceOpaqueAlpha: false,
+			frameIndex: props.EyeIrisFrame
+		)
 			?? LoadTexture( materialsRoot, props.BaseTexturePath, forceOpaqueAlpha: false )
 			?? CreateSolidColor( 1, 1, 255, 255, 255, 255 );
 		RgbaImage iris = irisRaw;
@@ -137,13 +142,18 @@ internal static class MaterialPipeline
 			?? CreateSolidColor( 1, 1, 128, 128, 255, 255 );
 		RgbaImage cornea = corneaRaw;
 
+		RgbaImage? occlusionRaw = LoadTexture( materialsRoot, props.EyeAmbientOcclTexturePath, forceOpaqueAlpha: true );
+
 		string irisPath = WriteTextureVariant( outputRoot, sourceMaterialPath, "iris", iris );
 		string corneaPath = WriteTextureVariant( outputRoot, sourceMaterialPath, "cornea", cornea );
+		string occlusionPath = occlusionRaw is not null
+			? WriteTextureVariant( outputRoot, sourceMaterialPath, "ao", occlusionRaw )
+			: string.Empty;
 
 		string vmatRelativePath = $"materials/{sourceMaterialPath}.vmat".Replace( '\\', '/' );
 		string vmatAbsolutePath = Path.Combine( outputRoot, vmatRelativePath.Replace( '/', Path.DirectorySeparatorChar ) );
 
-		WriteEyeVmat( vmatAbsolutePath, irisPath, corneaPath, props );
+		WriteEyeVmat( vmatAbsolutePath, irisPath, corneaPath, occlusionPath, props );
 		result.Remaps.Add( new MaterialRemapExport
 		{
 			From = fromReference,
@@ -541,7 +551,7 @@ internal static class MaterialPipeline
 		};
 	}
 
-	private static RgbaImage? LoadTexture( string materialsRoot, string texturePath, bool forceOpaqueAlpha )
+	private static RgbaImage? LoadTexture( string materialsRoot, string texturePath, bool forceOpaqueAlpha, int frameIndex = 0 )
 	{
 		string normalized = NormalizeVirtualMaterialPath( texturePath );
 		if ( string.IsNullOrWhiteSpace( normalized ) )
@@ -559,7 +569,7 @@ internal static class MaterialPipeline
 		{
 			byte[] bytes = File.ReadAllBytes( filePath );
 			VtfFile vtf = VtfFile.Load( bytes );
-			byte[]? rgba = vtf.ConvertToRGBA( forceOpaqueAlpha );
+			byte[]? rgba = vtf.ConvertToRGBA( frameIndex, forceOpaqueAlpha );
 			if ( rgba is null )
 			{
 				return null;
@@ -855,9 +865,16 @@ internal static class MaterialPipeline
 		string vmatAbsolutePath,
 		string irisPath,
 		string corneaPath,
+		string occlusionPath,
 		ExtractedPbrProperties props )
 	{
 		Directory.CreateDirectory( Path.GetDirectoryName( vmatAbsolutePath ) ?? "." );
+
+		float eyeGloss = Math.Clamp( props.EyeGlossiness, 0f, 1f );
+		float irisRoughness = Math.Clamp( 1f - eyeGloss, 0.01f, 1f );
+		float eyeParallax = Math.Clamp( props.EyeParallaxStrength, 0f, 1f );
+		float corneaBump = Math.Clamp( props.EyeCorneaBumpStrength, 0f, 4f );
+		float occlusionStrength = Math.Clamp( props.EyeAmbientOcclusionStrength, 0f, 1f );
 
 		var sb = new StringBuilder( 1024 );
 		sb.AppendLine( "\"Layer0\"" );
@@ -882,27 +899,27 @@ internal static class MaterialPipeline
 		AppendKeyValue( sb, "g_bFogEnabled", "1" );
 		sb.AppendLine();
 		sb.AppendLine( "\t//---- Iris ----" );
-		AppendKeyValue( sb, "g_flIrisBumpStrength", FmtFloat( props.EyeCorneaBumpStrength ) );
-		AppendKeyValue( sb, "g_flParallaxStrength", "0.000" );
+		AppendKeyValue( sb, "g_flIrisBumpStrength", FmtFloat( corneaBump ) );
+		AppendKeyValue( sb, "g_flParallaxStrength", FmtFloat( eyeParallax ) );
 		AppendKeyValue( sb, "g_vIrisAutoexposureRange", "[0.000 0.000]" );
 		AppendKeyValue( sb, "IrisNormal", corneaPath );
-		AppendKeyValue( sb, "IrisRoughness", "[1.000000 1.000000 1.000000 0.000000]" );
+		AppendKeyValue( sb, "IrisRoughness", $"[{FmtFloat( irisRoughness )} {FmtFloat( irisRoughness )} {FmtFloat( irisRoughness )} 0.000000]" );
 		AppendKeyValue( sb, "TextureIrisMask", irisPath );
 		sb.AppendLine();
 		sb.AppendLine( "\t//---- Lighting ----" );
-		AppendKeyValue( sb, "g_vReflectanceRange", "[1.000 1.000]" );
+		AppendKeyValue( sb, "g_vReflectanceRange", "[0.000 1.000]" );
 		AppendKeyValue( sb, "TextureReflectance", "materials/default/default_refl.tga" );
 		sb.AppendLine();
 		sb.AppendLine( "\t//---- Normal ----" );
-		AppendKeyValue( sb, "g_flCorneaScleraBumpStrength", "0.000" );
+		AppendKeyValue( sb, "g_flCorneaScleraBumpStrength", FmtFloat( corneaBump ) );
 		AppendKeyValue( sb, "g_flScleraDiffuseExponent", "1.000" );
 		AppendKeyValue( sb, "g_flScleraDiffuseWrap", "1.000" );
 		AppendKeyValue( sb, "TextureNormal", "[0.501961 0.501961 1.000000 0.000000]" );
 		sb.AppendLine();
 		sb.AppendLine( "\t//---- Occlusion ----" );
-		AppendKeyValue( sb, "g_flOcclusionStrength", "0.000" );
+		AppendKeyValue( sb, "g_flOcclusionStrength", FmtFloat( occlusionStrength ) );
 		AppendKeyValue( sb, "g_flOcclusionWidth", "0.100" );
-		AppendKeyValue( sb, "TextureOcclusion", "[1.000000 1.000000 1.000000 0.000000]" );
+		AppendKeyValue( sb, "TextureOcclusion", string.IsNullOrWhiteSpace( occlusionPath ) ? "[1.000000 1.000000 1.000000 0.000000]" : occlusionPath );
 		sb.AppendLine();
 		sb.AppendLine( "\t//---- Texture Coordinates ----" );
 		AppendKeyValue( sb, "g_nScaleTexCoordUByModelScaleAxis", "0" );

@@ -14,6 +14,7 @@ internal sealed class MainForm : Form
 	private readonly NumericUpDown _threadsUpDown = new();
 	private readonly CheckBox _preservePathCheckBox = new();
 	private readonly CheckBox _materialsCheckBox = new();
+	private readonly CheckBox _animationsCheckBox = new();
 	private readonly CheckBox _copyShadersCheckBox = new();
 	private readonly ComboBox _roughSourceComboBox = new();
 	private readonly ComboBox _roughChannelComboBox = new();
@@ -368,17 +369,24 @@ internal sealed class MainForm : Form
 		conversionPanel.Controls.Add( _materialsCheckBox, 0, 3 );
 		conversionPanel.SetColumnSpan( _materialsCheckBox, 2 );
 
+		_animationsCheckBox.Text = "Export Animations";
+		_animationsCheckBox.AutoSize = true;
+		_animationsCheckBox.Checked = false;
+		_animationsCheckBox.Margin = new Padding( 0, 2, 0, 2 );
+		conversionPanel.Controls.Add( _animationsCheckBox, 0, 4 );
+		conversionPanel.SetColumnSpan( _animationsCheckBox, 2 );
+
 		_copyShadersCheckBox.Text = "Copy Custom Shaders";
 		_copyShadersCheckBox.AutoSize = true;
 		_copyShadersCheckBox.Checked = true;
 		_copyShadersCheckBox.Margin = new Padding( 0, 2, 0, 2 );
-		conversionPanel.Controls.Add( _copyShadersCheckBox, 0, 4 );
+		conversionPanel.Controls.Add( _copyShadersCheckBox, 0, 5 );
 		conversionPanel.SetColumnSpan( _copyShadersCheckBox, 2 );
 
 		_verboseCheckBox.Text = "Verbose";
 		_verboseCheckBox.AutoSize = true;
 		_verboseCheckBox.Margin = new Padding( 0, 2, 0, 2 );
-		conversionPanel.Controls.Add( _verboseCheckBox, 0, 5 );
+		conversionPanel.Controls.Add( _verboseCheckBox, 0, 6 );
 		conversionPanel.SetColumnSpan( _verboseCheckBox, 2 );
 
 		_convertButton.Text = "Convert";
@@ -387,7 +395,7 @@ internal sealed class MainForm : Form
 		_convertButton.Height = 32;
 		_convertButton.Margin = new Padding( 0, 10, 0, 0 );
 		_convertButton.Click += async ( _, _ ) => await ConvertAsync();
-		conversionPanel.Controls.Add( _convertButton, 0, 6 );
+		conversionPanel.Controls.Add( _convertButton, 0, 7 );
 		conversionPanel.SetColumnSpan( _convertButton, 2 );
 
 		conversionGroup.Controls.Add( conversionPanel );
@@ -763,6 +771,7 @@ internal sealed class MainForm : Form
 			ShaderSourceDirectory = null,
 			PreserveModelRelativePath = _preservePathCheckBox.Checked,
 			ConvertMaterials = _materialsCheckBox.Checked,
+			ExportAnimations = _animationsCheckBox.Checked,
 			CopyShaders = _copyShadersCheckBox.Checked,
 			Verbose = _verboseCheckBox.Checked,
 			MaterialProfileOverride = profileOverride,
@@ -803,6 +812,7 @@ internal sealed class MainForm : Form
 				AppendLog( $"Failed: {summary.Failed}" );
 				AppendLog( $"Total SMD files: {summary.TotalSmdCount}" );
 				AppendLog( $"Total DMX files: {summary.TotalDmxCount}" );
+				AppendLog( $"Total animation files: {summary.TotalAnimationCount}" );
 				AppendLog( $"Total material remaps: {summary.TotalMaterialRemapCount}" );
 				AppendLog( $"Total morph channels: {summary.TotalMorphChannelCount}" );
 
@@ -831,6 +841,7 @@ internal sealed class MainForm : Form
 				AppendLog( $"VMDL: {summary.VmdlPath}" );
 				AppendLog( $"SMD files: {summary.SmdCount}" );
 				AppendLog( $"DMX files: {summary.DmxCount}" );
+				AppendLog( $"Anim files: {summary.AnimationCount}" );
 				AppendLog( $"Material remaps: {summary.MaterialRemapCount}" );
 				AppendLog( $"Morph channels: {summary.MorphChannelCount}" );
 			}
