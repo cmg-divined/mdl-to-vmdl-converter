@@ -120,6 +120,80 @@ internal static class MaterialPipeline
 		return result;
 	}
 
+	public static MaterialConversionResult BuildRemapsOnly(
+		BuildContext context,
+		string? gmodRoot,
+		string mdlPath,
+		Action<string>? info = null,
+		Action<string>? warn = null )
+	{
+		info ??= _ => { };
+		warn ??= _ => { };
+
+		var result = new MaterialConversionResult();
+		if ( context.SourceMaterials.Count == 0 )
+		{
+			return result;
+		}
+
+		string modelRelativeDirectory = string.Empty;
+		if ( !string.IsNullOrWhiteSpace( gmodRoot )
+			&& ConversionRunner.TryGetModelRelativeDirectory( mdlPath, gmodRoot, out string resolvedRelative ) )
+		{
+			modelRelativeDirectory = resolvedRelative;
+		}
+
+		string? materialsRoot = null;
+		if ( !string.IsNullOrWhiteSpace( gmodRoot ) )
+		{
+			string candidate = Path.Combine( gmodRoot, "materials" );
+			if ( Directory.Exists( candidate ) )
+			{
+				materialsRoot = candidate;
+			}
+			else
+			{
+				warn( $"[warn] Materials folder not found while building remaps: {candidate}" );
+			}
+		}
+
+		var seenRemapFrom = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+		foreach ( string materialToken in context.SourceMaterials.OrderBy( v => v, StringComparer.OrdinalIgnoreCase ) )
+		{
+			string fromReference = ToMaterialRemapFrom( materialToken );
+			if ( !seenRemapFrom.Add( fromReference ) )
+			{
+				continue;
+			}
+
+			string? sourceMaterialPath = null;
+			if ( !string.IsNullOrWhiteSpace( materialsRoot ) )
+			{
+				sourceMaterialPath = ResolveSourceMaterialPath(
+					materialToken,
+					context.SourceModel.Mdl.MaterialPaths,
+					modelRelativeDirectory,
+					materialsRoot
+				);
+			}
+
+			if ( string.IsNullOrWhiteSpace( sourceMaterialPath ) )
+			{
+				sourceMaterialPath = BuildFallbackMaterialPath( materialToken, modelRelativeDirectory );
+			}
+
+			string toReference = $"materials/{sourceMaterialPath}.vmat".Replace( '\\', '/' );
+			result.Remaps.Add( new MaterialRemapExport
+			{
+				From = fromReference,
+				To = toReference
+			} );
+		}
+
+		info( $"Material remaps generated without conversion: {result.Remaps.Count}" );
+		return result;
+	}
+
 	private static void WriteEyeMaterial(
 		string outputRoot,
 		string materialsRoot,
@@ -355,7 +429,9 @@ internal static class MaterialPipeline
 		string normalPath = WriteTextureVariant( outputRoot, sourceMaterialPath, "normal", normal );
 		string roughnessPath = WriteTextureVariant( outputRoot, sourceMaterialPath, "roughness", roughness );
 		string metalnessPath = WriteTextureVariant( outputRoot, sourceMaterialPath, "metalness", metalness );
-		string aoPath = WriteTextureVariant( outputRoot, sourceMaterialPath, "ao", ao );
+		string aoValue = props.Format == PbrFormat.MWBPBR
+			? "[1.000000 1.000000 1.000000 0.000000]"
+			: WriteTextureVariant( outputRoot, sourceMaterialPath, "ao", ao );
 
 		string shaderPath = GetPbrShaderPath( props );
 		string vmatRelativePath = $"materials/{sourceMaterialPath}.vmat".Replace( '\\', '/' );
@@ -368,7 +444,7 @@ internal static class MaterialPipeline
 			normalPath,
 			roughnessPath,
 			metalnessPath,
-			aoPath,
+			aoValue,
 			props
 		);
 

@@ -58,7 +58,11 @@ internal static class ConversionRunner
 		return RunSingle( options, options.MdlPath, options.CopyShaders, info, warn );
 	}
 
-	public static BatchConversionSummary RunBatch( ConverterOptions options, Action<string>? info = null, Action<string>? warn = null )
+	public static BatchConversionSummary RunBatch(
+		ConverterOptions options,
+		Action<string>? info = null,
+		Action<string>? warn = null,
+		Action<int, int>? progress = null )
 	{
 		info ??= _ => { };
 		warn ??= _ => { };
@@ -106,9 +110,13 @@ internal static class ConversionRunner
 			ShaderCopyPipeline.Copy( options, outputRoot, info, warn );
 		}
 
+		int totalModels = mdlPaths.Count;
+		progress?.Invoke( 0, totalModels );
+
 		var failures = new ConcurrentBag<BatchConversionFailure>();
 		int succeeded = 0;
 		int failed = 0;
+		int processed = 0;
 		int totalSmdCount = 0;
 		int totalDmxCount = 0;
 		int totalAnimationCount = 0;
@@ -120,7 +128,7 @@ internal static class ConversionRunner
 			MaxDegreeOfParallelism = Math.Max( 1, options.MaxParallelism )
 		};
 
-		info( $"Batch conversion started: {mdlPaths.Count} model(s), threads={parallelOptions.MaxDegreeOfParallelism}, recursive={options.RecursiveSearch}" );
+		info( $"Batch conversion started: {totalModels} model(s), threads={parallelOptions.MaxDegreeOfParallelism}, recursive={options.RecursiveSearch}" );
 
 		Parallel.ForEach( mdlPaths, parallelOptions, mdlPath =>
 		{
@@ -150,6 +158,11 @@ internal static class ConversionRunner
 				} );
 				scopedWarn( $"[fail] {ex.Message}" );
 			}
+			finally
+			{
+				int done = Interlocked.Increment( ref processed );
+				progress?.Invoke( done, totalModels );
+			}
 		} );
 
 		List<BatchConversionFailure> orderedFailures = failures
@@ -161,7 +174,7 @@ internal static class ConversionRunner
 		return new BatchConversionSummary
 		{
 			OutputRoot = outputRoot,
-			TotalModels = mdlPaths.Count,
+			TotalModels = totalModels,
 			Succeeded = succeeded,
 			Failed = failed,
 			TotalSmdCount = totalSmdCount,
@@ -272,6 +285,19 @@ internal static class ConversionRunner
 			{
 				ShaderCopyPipeline.Copy( options, outputRoot, info, warn );
 			}
+		}
+		else
+		{
+			MaterialConversionResult remapOnlyResult = MaterialPipeline.BuildRemapsOnly(
+				buildContext,
+				gmodRoot,
+				mdlPath,
+				info,
+				warn
+			);
+
+			buildContext.MaterialRemaps.AddRange( remapOnlyResult.Remaps );
+			BuildSkinMaterialGroups( buildContext, info, warn );
 		}
 
 		string vmdlFileName = options.VmdlFileName;

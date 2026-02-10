@@ -2,6 +2,7 @@ using System.Windows.Forms;
 
 internal sealed class MainForm : Form
 {
+	private const string BaseWindowTitle = "MDL to VMDL Converter";
 	private const int DwmwaUseImmersiveDarkMode = 20;
 	private const int DwmwaUseImmersiveDarkModeLegacy = 19;
 	private const uint SwpNosize = 0x0001;
@@ -68,7 +69,7 @@ internal sealed class MainForm : Form
 
 	public MainForm()
 	{
-		Text = "MDL to VMDL Converter";
+		Text = BaseWindowTitle;
 		StartPosition = FormStartPosition.CenterScreen;
 		MinimumSize = new Size( 980, 720 );
 		Width = 1080;
@@ -859,7 +860,8 @@ internal sealed class MainForm : Form
 					ConversionRunner.RunBatch(
 						options,
 						message => AppendLog( message ),
-						warning => AppendLog( warning )
+						warning => AppendLog( warning ),
+						(processed, total) => UpdateBatchProgressTitle( processed, total )
 					)
 				);
 
@@ -913,6 +915,7 @@ internal sealed class MainForm : Form
 		finally
 		{
 			_convertButton.Enabled = true;
+			ResetWindowTitle();
 		}
 	}
 
@@ -947,6 +950,35 @@ internal sealed class MainForm : Form
 		ApplyNativeTheme();
 		Invalidate( true );
 		Update();
+	}
+
+	private void UpdateBatchProgressTitle( int processed, int total )
+	{
+		if ( InvokeRequired )
+		{
+			BeginInvoke( () => UpdateBatchProgressTitle( processed, total ) );
+			return;
+		}
+
+		if ( total <= 0 )
+		{
+			Text = BaseWindowTitle;
+			return;
+		}
+
+		int safeProcessed = Math.Clamp( processed, 0, total );
+		Text = $"{BaseWindowTitle} - {safeProcessed}/{total}";
+	}
+
+	private void ResetWindowTitle()
+	{
+		if ( InvokeRequired )
+		{
+			BeginInvoke( ResetWindowTitle );
+			return;
+		}
+
+		Text = BaseWindowTitle;
 	}
 
 	private void ApplyDarkThemeRecursive( Control control )

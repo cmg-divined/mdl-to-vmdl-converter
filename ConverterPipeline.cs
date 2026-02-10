@@ -35,13 +35,15 @@ internal static class ConverterPipeline
 		VtxFile vtx = context.SourceModel.Vtx;
 		VvdVertex[] vertices = context.SourceModel.Vvd.GetVerticesForLod( 0 );
 		bool isStaticProp = mdl.Header.IsStaticProp;
+		var usedMeshNames = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
 
 		int bodyPartVertexIndexStart = 0;
 		for ( int bpIdx = 0; bpIdx < mdl.BodyParts.Count; bpIdx++ )
 		{
 			MdlBodyPart mdlBodyPart = mdl.BodyParts[bpIdx];
 			VtxBodyPartData? vtxBodyPart = bpIdx < vtx.BodyParts.Count ? vtx.BodyParts[bpIdx] : null;
-			string bodyGroupName = NameUtil.CleanName( mdlBodyPart.Name, $"bodypart_{bpIdx}" );
+			string bodyGroupName = NameUtil.CleanNodeName( mdlBodyPart.Name, $"bodypart_{bpIdx}" );
+			string bodyGroupNodePrefix = bodyGroupName;
 
 			var choices = new List<BodyGroupChoiceExport>();
 			int nonEmptyChoiceCount = 0;
@@ -51,7 +53,7 @@ internal static class ConverterPipeline
 			{
 				MdlModel mdlModel = mdlBodyPart.Models[modelIdx];
 				VtxModelData? vtxModel = vtxBodyPart is not null && modelIdx < vtxBodyPart.Models.Count ? vtxBodyPart.Models[modelIdx] : null;
-				string choiceName = NameUtil.CleanName( mdlModel.Name, $"choice_{modelIdx}" );
+				string choiceName = NameUtil.CleanNodeName( mdlModel.Name, $"choice_{modelIdx}" );
 
 				bool isExplicitOff = string.IsNullOrWhiteSpace( mdlModel.Name ) ||
 					mdlModel.Name.StartsWith( "blank", StringComparison.OrdinalIgnoreCase ) ||
@@ -84,7 +86,8 @@ internal static class ConverterPipeline
 					continue;
 				}
 
-				string meshName = NameUtil.CleanName( $"{bodyGroupName}_{modelIdx}", $"mesh_{bpIdx}_{modelIdx}" );
+				string meshNameBase = NameUtil.CleanNodeName( $"{bodyGroupNodePrefix}_{modelIdx}", $"mesh_{bpIdx}_{modelIdx}" );
+				string meshName = EnsureUniqueName( meshNameBase, usedMeshNames );
 				string fileName = NameUtil.CleanFileName( $"{context.ModelBaseName}_{bpIdx}_{modelIdx}.smd" );
 				context.Meshes.Add( new MeshExport
 				{
@@ -120,10 +123,10 @@ internal static class ConverterPipeline
 			} );
 		}
 
-		AddSkeletonAnchorMesh( context );
+		AddSkeletonAnchorMesh( context, usedMeshNames );
 	}
 
-	private static void AddSkeletonAnchorMesh( BuildContext context )
+	private static void AddSkeletonAnchorMesh( BuildContext context, HashSet<string> usedMeshNames )
 	{
 		List<MdlBone> bones = context.SourceModel.Mdl.Bones;
 		if ( bones.Count == 0 )
@@ -133,6 +136,7 @@ internal static class ConverterPipeline
 
 		var triangles = new List<TriangleRecord>();
 		const float epsilon = 0.0001f;
+		string anchorMaterial = GetSkeletonAnchorMaterial( context.SourceModel.Mdl );
 
 		for ( int i = 0; i < bones.Count; i += 3 )
 		{
@@ -142,14 +146,14 @@ internal static class ConverterPipeline
 
 			triangles.Add( new TriangleRecord
 			{
-				Material = "__skeleton_anchor",
+				Material = anchorMaterial,
 				V0 = CreateAnchorVertex( b0, 0f, 0f, 0f ),
 				V1 = CreateAnchorVertex( b1, epsilon, 0f, 0f ),
 				V2 = CreateAnchorVertex( b2, 0f, epsilon, 0f )
 			} );
 		}
 
-		const string anchorMeshName = "__skeleton_anchor";
+		string anchorMeshName = EnsureUniqueName( "__skeleton_anchor", usedMeshNames );
 		context.Meshes.Insert( 0, new MeshExport
 		{
 			Name = anchorMeshName,
@@ -176,6 +180,33 @@ internal static class ConverterPipeline
 				}
 			}
 		} );
+	}
+
+	private static string GetSkeletonAnchorMaterial( MdlFile mdl )
+	{
+		foreach ( string rawMaterial in mdl.Materials )
+		{
+			string material = NameUtil.CleanMaterialName( rawMaterial );
+			if ( !string.IsNullOrWhiteSpace( material ) )
+			{
+				return material;
+			}
+		}
+
+		return "default";
+	}
+
+	private static string EnsureUniqueName( string baseName, HashSet<string> usedNames )
+	{
+		string candidate = baseName;
+		int suffix = 1;
+		while ( !usedNames.Add( candidate ) )
+		{
+			candidate = $"{baseName}_{suffix}";
+			suffix++;
+		}
+
+		return candidate;
 	}
 
 	private static VertexRecord CreateAnchorVertex( int boneIndex, float x, float y, float z )
