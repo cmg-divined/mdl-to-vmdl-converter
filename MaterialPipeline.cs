@@ -6,6 +6,7 @@ internal sealed class MaterialConversionResult
 	public List<MaterialRemapExport> Remaps { get; } = new();
 	public int ConvertedCount { get; set; }
 	public int MissingCount { get; set; }
+	public int ReusedCount { get; set; }
 }
 
 internal static class MaterialPipeline
@@ -77,6 +78,11 @@ internal static class MaterialPipeline
 			if ( string.IsNullOrWhiteSpace( sourceMaterialPath ) )
 			{
 				sourceMaterialPath = BuildFallbackMaterialPath( materialToken, modelRelativeDirectory );
+				if ( TryReuseExistingMaterial( outputRoot, sourceMaterialPath, result, fromReference, info ) )
+				{
+					continue;
+				}
+
 				warn( $"[warn] Missing VMT for '{materialToken}', writing fallback VMAT at '{sourceMaterialPath}'" );
 				WriteFallbackMaterial( outputRoot, sourceMaterialPath, result, fromReference );
 				continue;
@@ -86,8 +92,18 @@ internal static class MaterialPipeline
 			if ( !File.Exists( vmtFilePath ) )
 			{
 				sourceMaterialPath = BuildFallbackMaterialPath( materialToken, modelRelativeDirectory );
+				if ( TryReuseExistingMaterial( outputRoot, sourceMaterialPath, result, fromReference, info ) )
+				{
+					continue;
+				}
+
 				warn( $"[warn] VMT path resolved but file missing for '{materialToken}', writing fallback VMAT" );
 				WriteFallbackMaterial( outputRoot, sourceMaterialPath, result, fromReference );
+				continue;
+			}
+
+			if ( TryReuseExistingMaterial( outputRoot, sourceMaterialPath, result, fromReference, info ) )
+			{
 				continue;
 			}
 
@@ -112,11 +128,15 @@ internal static class MaterialPipeline
 			catch ( Exception ex )
 			{
 				warn( $"[warn] Material conversion failed for '{materialToken}': {ex.Message}" );
-				WriteFallbackMaterial( outputRoot, BuildFallbackMaterialPath( materialToken, modelRelativeDirectory ), result, fromReference );
+				string fallbackPath = BuildFallbackMaterialPath( materialToken, modelRelativeDirectory );
+				if ( !TryReuseExistingMaterial( outputRoot, fallbackPath, result, fromReference, info ) )
+				{
+					WriteFallbackMaterial( outputRoot, fallbackPath, result, fromReference );
+				}
 			}
 		}
 
-		info( $"Materials converted: {result.ConvertedCount}, fallbacks: {result.MissingCount}" );
+		info( $"Materials converted: {result.ConvertedCount}, reused: {result.ReusedCount}, fallbacks: {result.MissingCount}" );
 		return result;
 	}
 
@@ -867,7 +887,15 @@ internal static class MaterialPipeline
 	{
 		string relativePath = $"materials/{sourceMaterialPath}_{suffix}.tga".Replace( '\\', '/' );
 		string fullPath = Path.Combine( outputRoot, relativePath.Replace( '/', Path.DirectorySeparatorChar ) );
-		WriteWithFileLock( fullPath, () => TgaWriter.WriteRgba32( fullPath, image.Width, image.Height, image.Pixels ) );
+		WriteWithFileLock( fullPath, () =>
+		{
+			if ( File.Exists( fullPath ) )
+			{
+				return;
+			}
+
+			TgaWriter.WriteRgba32( fullPath, image.Width, image.Height, image.Pixels );
+		} );
 		return relativePath;
 	}
 
@@ -926,7 +954,15 @@ internal static class MaterialPipeline
 
 		sb.AppendLine( "}" );
 		string contents = sb.ToString();
-		WriteWithFileLock( vmatAbsolutePath, () => File.WriteAllText( vmatAbsolutePath, contents, new UTF8Encoding( false ) ) );
+		WriteWithFileLock( vmatAbsolutePath, () =>
+		{
+			if ( File.Exists( vmatAbsolutePath ) )
+			{
+				return;
+			}
+
+			File.WriteAllText( vmatAbsolutePath, contents, new UTF8Encoding( false ) );
+		} );
 	}
 
 	private sealed class EyeShaderProjectionData
@@ -1011,7 +1047,39 @@ internal static class MaterialPipeline
 
 		sb.AppendLine( "}" );
 		string contents = sb.ToString();
-		WriteWithFileLock( vmatAbsolutePath, () => File.WriteAllText( vmatAbsolutePath, contents, new UTF8Encoding( false ) ) );
+		WriteWithFileLock( vmatAbsolutePath, () =>
+		{
+			if ( File.Exists( vmatAbsolutePath ) )
+			{
+				return;
+			}
+
+			File.WriteAllText( vmatAbsolutePath, contents, new UTF8Encoding( false ) );
+		} );
+	}
+
+	private static bool TryReuseExistingMaterial(
+		string outputRoot,
+		string sourceMaterialPath,
+		MaterialConversionResult result,
+		string fromReference,
+		Action<string>? info )
+	{
+		string vmatRelativePath = $"materials/{sourceMaterialPath}.vmat".Replace( '\\', '/' );
+		string vmatAbsolutePath = Path.Combine( outputRoot, vmatRelativePath.Replace( '/', Path.DirectorySeparatorChar ) );
+		if ( !File.Exists( vmatAbsolutePath ) )
+		{
+			return false;
+		}
+
+		result.Remaps.Add( new MaterialRemapExport
+		{
+			From = fromReference,
+			To = vmatRelativePath
+		} );
+		result.ReusedCount++;
+		info?.Invoke( $"Material reused: {sourceMaterialPath}" );
+		return true;
 	}
 
 	private static EyeShaderProjectionData? TryResolveEyeProjectionData( MdlFile mdl, string sourceMaterialPath )
